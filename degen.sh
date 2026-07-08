@@ -45,6 +45,7 @@ declare -A AGENT_LABEL=(
   [windsurf]="Windsurf"
   [cline]="Cline"
   [aider]="Aider"
+  [grok]="Grok (xAI) — via AGENTS.md standard"
 )
 declare -A AGENT_PROJECT_FILE=(
   [claude]="CLAUDE.md"
@@ -55,6 +56,7 @@ declare -A AGENT_PROJECT_FILE=(
   [windsurf]=".windsurfrules"
   [cline]=".clinerules"
   [aider]="CONVENTIONS.md"
+  [grok]="AGENTS.md"
 )
 declare -A AGENT_GLOBAL_FILE=(
   [claude]=".claude/CLAUDE.md"

@@ -83,6 +83,13 @@ files and **updates** any tool-specific files that already exist:
 With `--global`, it targets home-level config instead
 (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, …).
 
+**Grok:** there's no confirmed dedicated config-file convention for Grok
+tooling, so `--agent grok` targets the same `AGENTS.md` cross-tool standard
+file as `codex` (it's not included in the plain default `install` to avoid
+writing that file twice — use it explicitly: `./degen.sh install --agent
+grok`). If your Grok tool actually reads a different file, open an issue or
+tell us the path and we'll add a dedicated mapping.
+
 ## Options
 
 | Option         | Description                                                              |
