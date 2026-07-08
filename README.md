@@ -22,19 +22,35 @@ Show progress.
 ## Install
 
 ```sh
-./degen.sh install            # into this project's agent files
-./degen.sh install --global   # into your home-level agent files
+./degen.sh install                  # into every known agent file
+./degen.sh install --agent claude   # into just one agent (e.g. the one you're using now)
+./degen.sh install --global         # into your home-level agent files
 ```
 
 The DEGEN block is inserted between marker comments, so it never clobbers
 instructions you already have — existing files are appended to, and re-running
 `install` updates the block in place instead of duplicating it.
 
+## Try it on one agent first
+
+Applying DEGEN to every agent at once isn't always what you want. If you're
+only using one agent right now, target just that one:
+
+```sh
+./degen.sh agents                 # list agent ids
+./degen.sh install --agent claude # install into CLAUDE.md only
+```
+
+`--agent` accepts multiple names, repeated or comma-separated
+(`--agent claude,cursor`). Once you're happy with it, run `install` again
+without `--agent` to roll it out to the rest.
+
 ## Uninstall
 
 ```sh
-./degen.sh uninstall          # remove from this project's agent files
-./degen.sh uninstall --global # remove from your home-level agent files
+./degen.sh uninstall                  # remove from this project's agent files
+./degen.sh uninstall --agent claude   # remove from just one agent
+./degen.sh uninstall --global         # remove from your home-level agent files
 ```
 
 Uninstall removes only the managed DEGEN block. Files that contained nothing
@@ -44,7 +60,8 @@ own content are left intact with the block cleanly stripped out.
 ## Status
 
 ```sh
-./degen.sh status             # show which targets have DEGEN installed
+./degen.sh status                   # show which targets have DEGEN installed
+./degen.sh status --agent claude    # check just one agent
 ```
 
 ## What gets written
@@ -68,11 +85,12 @@ With `--global`, it targets home-level config instead
 
 ## Options
 
-| Option        | Description                                                     |
-| ------------- | --------------------------------------------------------------- |
-| `--global`    | Operate on home-level (`~`) agent files instead of the project. |
-| `--dir PATH`  | Operate on a specific project directory (default: current dir). |
-| `--all`       | Write to every known target even if the file doesn't exist yet. |
+| Option         | Description                                                              |
+| -------------- | ------------------------------------------------------------------------- |
+| `--agent NAME` | Target only this agent (repeatable, or comma-separated). Always creates its file, since you asked for it explicitly. See `./degen.sh agents`. |
+| `--global`     | Operate on home-level (`~`) agent files instead of the project.          |
+| `--dir PATH`   | Operate on a specific project directory (default: current dir).         |
+| `--all`        | Write to every known target even if the file doesn't exist yet. Ignored when `--agent` is set. |
 
 You can override the target list entirely with an environment variable:
 

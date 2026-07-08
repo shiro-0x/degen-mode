@@ -5,18 +5,23 @@
 # The DEGEN block is inserted between marker comments so it can be updated or
 # removed cleanly without touching the rest of your instructions.
 #
-#   ./degen.sh install            # install into this project's agent files
-#   ./degen.sh install --global   # install into your home-level agent files
-#   ./degen.sh uninstall          # remove from this project's agent files
-#   ./degen.sh uninstall --global # remove from your home-level agent files
-#   ./degen.sh status             # show where DEGEN is installed
+#   ./degen.sh install                    # install into every known agent file
+#   ./degen.sh install --agent claude     # install into just one agent (e.g. the one you're using now)
+#   ./degen.sh install --global           # install into your home-level agent files
+#   ./degen.sh uninstall                  # remove from this project's agent files
+#   ./degen.sh uninstall --agent claude   # remove from just one agent
+#   ./degen.sh status                     # show where DEGEN is installed
+#   ./degen.sh agents                     # list known agent names
 #
 # Options:
+#   --agent <name>  Target only this agent (repeatable, or comma-separated).
+#                   Run `./degen.sh agents` to see valid names.
 #   --global        Operate on home-level (~) agent files instead of the project.
 #   --dir <path>    Operate on a specific project directory (default: cwd).
 #   --all           Write to every known target even if the file doesn't exist yet.
 #                   (Default: create the cross-tool files, and update any other
-#                    agent files that already exist.)
+#                    agent files that already exist. Ignored when --agent is set,
+#                    since an explicit --agent always creates its file.)
 #
 # Override the target list with the DEGEN_TARGETS env var (space-separated paths).
 
@@ -28,6 +33,40 @@ DEGEN_END="<!-- DEGEN:END -->"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SRC="$SCRIPT_DIR/DEGEN.min"
 
+# ---- agent registry ----------------------------------------------------------
+# id -> human label, project-relative file, home-relative file (blank = no global target)
+
+declare -A AGENT_LABEL=(
+  [claude]="Claude Code"
+  [codex]="Codex / AGENTS.md standard"
+  [gemini]="Gemini CLI"
+  [copilot]="GitHub Copilot"
+  [cursor]="Cursor"
+  [windsurf]="Windsurf"
+  [cline]="Cline"
+  [aider]="Aider"
+)
+declare -A AGENT_PROJECT_FILE=(
+  [claude]="CLAUDE.md"
+  [codex]="AGENTS.md"
+  [gemini]="GEMINI.md"
+  [copilot]=".github/copilot-instructions.md"
+  [cursor]=".cursorrules"
+  [windsurf]=".windsurfrules"
+  [cline]=".clinerules"
+  [aider]="CONVENTIONS.md"
+)
+declare -A AGENT_GLOBAL_FILE=(
+  [claude]=".claude/CLAUDE.md"
+  [codex]=".codex/AGENTS.md"
+  [gemini]=".gemini/GEMINI.md"
+  [aider]=".config/aider/CONVENTIONS.md"
+)
+# Default project-mode behavior when no --agent is given: which ids are
+# always created vs. only updated if the file already exists.
+DEFAULT_CREATE_AGENTS=(claude codex gemini copilot)
+DEFAULT_UPDATE_AGENTS=(cursor windsurf cline aider)
+
 # ---- args -------------------------------------------------------------------
 
 CMD="${1:-}"
@@ -36,52 +75,74 @@ CMD="${1:-}"
 GLOBAL=0
 ALL=0
 DIR="$PWD"
+AGENTS_SELECTED=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --global) GLOBAL=1 ;;
     --all)    ALL=1 ;;
     --dir)    shift; DIR="${1:?--dir needs a path}" ;;
+    --agent)
+      shift
+      IFS=',' read -ra _parts <<< "${1:?--agent needs a name (see: degen.sh agents)}"
+      AGENTS_SELECTED+=("${_parts[@]}")
+      ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
 done
 
+for a in "${AGENTS_SELECTED[@]:-}"; do
+  [ -z "$a" ] && continue
+  if [ -z "${AGENT_LABEL[$a]:-}" ]; then
+    echo "unknown agent: $a" >&2
+    echo "known agents: ${!AGENT_LABEL[*]}" >&2
+    exit 2
+  fi
+done
+
 # ---- target selection -------------------------------------------------------
 
-# Files that we will CREATE if missing (the cross-tool standards).
+# Files that we will CREATE if missing (the cross-tool standards, or anything
+# explicitly requested via --agent).
 CREATE_FILES=()
-# Files we only UPDATE when they already exist (tool-specific).
+# Files we only UPDATE when they already exist (tool-specific, default mode only).
 UPDATE_FILES=()
 
 if [ -n "${DEGEN_TARGETS:-}" ]; then
   # user-provided list: create all of them
   # shellcheck disable=SC2206
   CREATE_FILES=($DEGEN_TARGETS)
+elif [ "${#AGENTS_SELECTED[@]}" -gt 0 ]; then
+  # explicit --agent selection: always create/update that agent's file, in
+  # whichever scope (project/global) was requested.
+  for a in "${AGENTS_SELECTED[@]}"; do
+    if [ "$GLOBAL" -eq 1 ]; then
+      rel="${AGENT_GLOBAL_FILE[$a]:-}"
+      [ -z "$rel" ] && { echo "agent '$a' has no --global target (it's project-only)" >&2; exit 2; }
+      CREATE_FILES+=("$HOME/$rel")
+    else
+      CREATE_FILES+=("$DIR/${AGENT_PROJECT_FILE[$a]}")
+    fi
+  done
 elif [ "$GLOBAL" -eq 1 ]; then
   base="$HOME"
-  CREATE_FILES=(
-    "$base/.claude/CLAUDE.md"     # Claude Code (global)
-    "$base/.codex/AGENTS.md"      # Codex / AGENTS.md standard (global)
-    "$base/.gemini/GEMINI.md"     # Gemini CLI (global)
-  )
-  UPDATE_FILES=(
-    "$base/.config/aider/CONVENTIONS.md"
-  )
+  for a in "${DEFAULT_CREATE_AGENTS[@]}"; do
+    rel="${AGENT_GLOBAL_FILE[$a]:-}"
+    [ -n "$rel" ] && CREATE_FILES+=("$base/$rel")
+  done
+  for a in "${DEFAULT_UPDATE_AGENTS[@]}"; do
+    rel="${AGENT_GLOBAL_FILE[$a]:-}"
+    [ -n "$rel" ] && UPDATE_FILES+=("$base/$rel")
+  done
 else
   base="$DIR"
-  CREATE_FILES=(
-    "$base/AGENTS.md"                          # cross-tool standard (Codex, etc.)
-    "$base/CLAUDE.md"                           # Claude Code
-    "$base/GEMINI.md"                           # Gemini CLI
-    "$base/.github/copilot-instructions.md"     # GitHub Copilot
-  )
-  UPDATE_FILES=(
-    "$base/.cursorrules"    # Cursor (legacy)
-    "$base/.windsurfrules"  # Windsurf
-    "$base/.clinerules"     # Cline
-    "$base/CONVENTIONS.md"  # Aider
-  )
+  for a in "${DEFAULT_CREATE_AGENTS[@]}"; do
+    CREATE_FILES+=("$base/${AGENT_PROJECT_FILE[$a]}")
+  done
+  for a in "${DEFAULT_UPDATE_AGENTS[@]}"; do
+    UPDATE_FILES+=("$base/${AGENT_PROJECT_FILE[$a]}")
+  done
 fi
 
 # ---- helpers ----------------------------------------------------------------
@@ -180,17 +241,25 @@ cmd_status() {
   [ "$any" -eq 1 ] || echo "DEGEN is not installed in these targets."
 }
 
+cmd_agents() {
+  printf '%-10s %-28s %s\n' "id" "agent" "project file"
+  for a in "${!AGENT_LABEL[@]}"; do
+    printf '%-10s %-28s %s\n' "$a" "${AGENT_LABEL[$a]}" "${AGENT_PROJECT_FILE[$a]}"
+  done | sort
+}
+
 case "$CMD" in
   install)   cmd_install ;;
   uninstall) cmd_uninstall ;;
   status)    cmd_status ;;
+  agents)    cmd_agents ;;
   ""|-h|--help|help)
     # print the leading comment header (skip the shebang, stop at first code line)
     awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
     ;;
   *)
     echo "unknown command: $CMD" >&2
-    echo "usage: degen.sh {install|uninstall|status} [--global] [--dir PATH] [--all]" >&2
+    echo "usage: degen.sh {install|uninstall|status|agents} [--agent NAME] [--global] [--dir PATH] [--all]" >&2
     exit 2
     ;;
 esac
