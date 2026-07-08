@@ -185,7 +185,8 @@ case "$CMD" in
   uninstall) cmd_uninstall ;;
   status)    cmd_status ;;
   ""|-h|--help|help)
-    sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+    # print the leading comment header (skip the shebang, stop at first code line)
+    awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
     ;;
   *)
     echo "unknown command: $CMD" >&2
