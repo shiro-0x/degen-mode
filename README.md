@@ -144,15 +144,35 @@ remove it without disturbing anything else in the file. It's idempotent: run
 ## Benchmarking: does DEGEN actually make your agent faster?
 
 Don't take the mindset's word for it — measure it. `bench/degen_bench.py`
-runs the same tasks with and without the DEGEN block (each run in a fresh
-temporary workspace, DEGEN installed via `degen.sh` itself) and compares
-wall time, agent-reported duration, turns, output tokens, and cost:
+runs the same prompt with and without the DEGEN block and compares outcome,
+token consumption, and speed. Every run is an **independent subagent** — a
+fresh agent process in its own isolated temp workspace, with DEGEN installed
+via `degen.sh` itself — so the only thing that differs between conditions is
+the instruction files present.
+
+The quickest way in is `ab`: give it one prompt, and it drives subagents
+across conditions (in parallel by default with `--parallel`) and shows you
+the answers side by side plus the metrics:
 
 ```sh
-python3 bench/degen_bench.py run                # baseline vs degen, 3 repeats
-python3 bench/degen_bench.py run --repeats 5 --tasks bench/tasks.txt
-python3 bench/degen_bench.py report bench/results/<file>.jsonl
+python3 bench/degen_bench.py ab "Refactor this function to be pure" --repeats 5 --parallel 5
+python3 bench/degen_bench.py ab "Return JSON with keys a,b summing to 10" --check "python3 -c 'import json,sys; d=json.load(sys.stdin); assert d[\"a\"]+d[\"b\"]==10'"
+python3 bench/degen_bench.py ab "Write a haiku about tests" --save-answers /tmp/ab
 ```
+
+For a whole suite of tasks instead of a single prompt, use `run`:
+
+```sh
+python3 bench/degen_bench.py run                       # baseline vs degen, 3 repeats
+python3 bench/degen_bench.py run --repeats 5 --parallel 4 --tasks bench/tasks.txt
+python3 bench/degen_bench.py report bench/results/<file>.jsonl [--answers]
+```
+
+`--parallel N` runs up to N subagents at once — a big wall-clock win when you
+have many runs (in-process test: 6 mock runs went 8.9s → 1.8s at
+`--parallel 6`). Each run is independent, so the only limit is your API rate
+limit. The report's `tot tok` column is total token consumption (input
+including cache, plus output); `in tok` / `out tok` break it down.
 
 Sample output — **from the included mock agent** (`bench/mock_agent.py`),
 which is a synthetic stand-in built to simulate a speedup, not a measurement
@@ -160,10 +180,10 @@ of any real model. It exists to prove the harness works end-to-end. Run the
 real thing yourself before drawing any conclusion (see below):
 
 ```
-| condition | runs | err | wall s | Δ    | agent s | Δ    | turns | out tok | Δ    | cost $ |
-|-----------|------|-----|--------|------|---------|------|-------|---------|------|--------|
-| baseline  | 6    | 0   | 2.03   | +0%  | 2.00    | +0%  | 5     | 346     | +0%  | 0.0104 |
-| degen     | 6    | 0   | 1.26   | -38% | 1.23    | -38% | 3     | 204     | -41% | 0.0061 |
+| condition | runs | err | wall s | Δwall | agent s | turns | in tok | out tok | tot tok | Δtot | cost $ |
+|-----------|------|-----|--------|-------|---------|-------|--------|---------|---------|------|--------|
+| baseline  | 10   | 0   | 1.85   | +0%   | 1.82    | 5     | 1200   | 320     | 1520    | +0%  | 0.0096 |
+| degen     | 10   | 0   | 1.22   | -34%  | 1.18    | 3     | 1200   | 202     | 1402    | -8%  | 0.0061 |
 ```
 
 The default agent command is `claude -p {task} --output-format json
@@ -175,6 +195,7 @@ temp workspace, not the directory you launched the command from:
 
 ```sh
 python3 bench/degen_bench.py run --agent-cmd 'python3 {mock_agent} {task}'
+python3 bench/degen_bench.py ab "any prompt" --agent-cmd 'python3 {mock_agent} {task}'
 ```
 
 ### Quality checks — a speedup doesn't count if the answer is wrong
