@@ -44,9 +44,13 @@ Quality checks (so a speedup can't hide a quality loss):
   report shows a check% column per condition. The check runs with the agent's
   answer on stdin AND its cwd set to the run's workspace, so it can verify a
   text reply (read stdin) or the files a build task produced (inspect cwd).
-  See bench/tasks_with_checks.example.json (text) and
-  bench/tasks_multiturn.example.json (build tasks that need tool use — run
-  those with an --agent-cmd that grants file permissions, see that file).
+  A task can also set "setup_files": {"path": "content"} to seed files into
+  the workspace before the agent starts (for debug/fix or improve-this-code
+  tasks). See bench/tasks_with_checks.example.json (text),
+  bench/tasks_multiturn.example.json (build from scratch), and
+  bench/tasks_multiturn2.example.json (debug-fix / optimize-existing-code,
+  uses setup_files) — run these with an --agent-cmd that grants file
+  permissions, see those files.
 """
 
 import argparse
@@ -77,11 +81,14 @@ DEFAULT_CONDITIONS = [
 
 
 def load_tasks(path):
-    """Return a list of {"prompt": str, "check": str|None} dicts.
+    """Return a list of {"prompt": str, "check": str|None, "setup_files": dict|None} dicts.
 
-    A .json file holds [{"prompt": ..., "check": ...}, ...] (check
-    optional). Anything else is treated as one prompt per line (# comments
-    allowed), with no quality check.
+    A .json file holds [{"prompt": ..., "check": ..., "setup_files": {...}}, ...]
+    ("check" and "setup_files" optional). "setup_files" is {relative_path:
+    content} written into the run's workspace before the agent starts — use it
+    for debug/fix or improve-this-code tasks that need pre-existing files.
+    Anything else (non-.json) is treated as one prompt per line (# comments
+    allowed), with no check and no setup files.
     """
     path = Path(path)
     if path.suffix == ".json":
@@ -92,10 +99,11 @@ def load_tasks(path):
         for it in items:
             if "prompt" not in it:
                 sys.exit(f"error: every task needs a 'prompt': {it}")
-            tasks.append({"prompt": it["prompt"], "check": it.get("check")})
+            tasks.append({"prompt": it["prompt"], "check": it.get("check"),
+                          "setup_files": it.get("setup_files")})
         return tasks
 
-    tasks = [{"prompt": line.strip(), "check": None}
+    tasks = [{"prompt": line.strip(), "check": None, "setup_files": None}
              for line in path.read_text().splitlines()
              if line.strip() and not line.strip().startswith("#")]
     if not tasks:
@@ -153,6 +161,11 @@ def run_once(task, cond, agent_cmd, timeout):
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     try:
+        for rel, content in (task.get("setup_files") or {}).items():
+            fp = work / rel
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_text(content)
+
         if cond.get("degen"):
             subprocess.run(
                 [str(DEGEN_SH), "install", "--dir", str(work),
@@ -367,8 +380,17 @@ def execute_matrix(tasks, conditions, agent_cmd, timeout, repeats, parallel, out
     return records
 
 
+def load_task_files(spec):
+    """--tasks accepts one path, or several comma-separated paths concatenated
+    in order (e.g. to combine build-from-scratch and debug-fix task sets)."""
+    tasks = []
+    for p in spec.split(","):
+        tasks += load_tasks(p.strip())
+    return tasks
+
+
 def cmd_run(args):
-    tasks = load_tasks(args.tasks)
+    tasks = load_task_files(args.tasks)
     conditions = load_conditions(args.conditions)
     out = Path(args.out) if args.out else default_out()
     total = len(tasks) * len(conditions) * args.repeats
@@ -427,7 +449,8 @@ def main():
 
     r = sub.add_parser("run", help="run the benchmark over a tasks file")
     r.add_argument("--tasks", default=str(BENCH_DIR / "tasks.txt"),
-                   help="prompts file (.txt one-per-line, or .json with checks)")
+                   help="prompts file (.txt one-per-line, or .json with checks); "
+                        "comma-separate multiple paths to combine them")
     add_common(r)
     r.set_defaults(func=cmd_run)
 

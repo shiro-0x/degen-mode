@@ -148,11 +148,29 @@ DEGEN says: record failures, keep an improvement log. This is that log.
       or loss. Caveats: 3 similar coding tasks, n=3 each, high variance
       (turns 2–5); acceptEdits meant the agent couldn't run its own code, so
       no exploratory/test-driven loops covered. Whole run cost ~$1.50.
-- [ ] **Bigger, more varied multi-turn run.** The n=9 result above is a lead,
-  not a verdict. Worth extending to more tasks, more repeats, and genuinely
-  exploratory tasks (a `bypassPermissions` sandbox so the agent can run/test
-  its own code) before drawing a firm conclusion. `ab --parallel` makes this
-  cheap.
+- [x] **Bigger, more varied multi-turn run.** Extended the n=9 lead: added
+  `setup_files` support to the harness (a task can seed files into the
+  workspace before the agent starts) and `bench/tasks_multiturn2.example.json`
+  (a debug-fix task with a real seeded bug, and an optimize-existing-code
+  task) — both exercising exploration/diagnosis, not just generation. Also
+  added `--tasks a.json,b.json` (comma-separated) to combine task files in
+  one run. `--permission-mode bypassPermissions` turned out to be rejected
+  outright when running as root (this sandbox does); switched to
+  `--allowedTools "Bash Write Edit Read"`, which grants Bash for genuine
+  self-test loops without that restriction. Ran all 5 tasks (3 original + 2
+  new) x 5 repeats x 2 conditions = 50 real `claude` runs (~$4, 2 transient
+  proxy-TLS errors hit both conditions on the same repeat — unrelated to
+  DEGEN, retried cleanly). Result: **n=25/condition, 100% check pass on
+  every single run.** Pooled: wall +1%, tokens +1%, turns tied — outside
+  noise. Per-task: the earlier apparent `slug` win (DEGEN, -25% tokens at
+  n=3) **did not replicate** at n=5 for that task (now a tie) — a clean
+  example of a small-sample artifact, caught by extending our own
+  benchmark rather than stopping at the favorable result. `parse_kv` still
+  favors baseline (replicated). The 2 new debug-fix/optimize tasks: no
+  meaningful difference either. Updated conclusion: DEGEN is statistically
+  indistinguishable from baseline on real multi-turn coding work (this
+  task set) — doesn't hurt (unlike single-turn/strict-output tasks with
+  announce on), but doesn't measurably help either.
 
 ## Later / maybe
 
