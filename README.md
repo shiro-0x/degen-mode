@@ -119,6 +119,65 @@ Because the block is delimited, `degen.sh` can find it later to update or
 remove it without disturbing anything else in the file. It's idempotent: run
 `install` as many times as you like.
 
+## Benchmarking: does DEGEN actually make your agent faster?
+
+Don't take the mindset's word for it — measure it. `bench/degen_bench.py`
+runs the same tasks with and without the DEGEN block (each run in a fresh
+temporary workspace, DEGEN installed via `degen.sh` itself) and compares
+wall time, agent-reported duration, turns, output tokens, and cost:
+
+```sh
+python3 bench/degen_bench.py run                # baseline vs degen, 3 repeats
+python3 bench/degen_bench.py run --repeats 5 --tasks bench/tasks.txt
+python3 bench/degen_bench.py report bench/results/<file>.jsonl
+```
+
+Sample output:
+
+```
+| condition | runs | err | wall s | Δ    | agent s | Δ    | turns | out tok | Δ    | cost $ |
+|-----------|------|-----|--------|------|---------|------|-------|---------|------|--------|
+| baseline  | 6    | 0   | 2.03   | +0%  | 2.00    | +0%  | 5     | 346     | +0%  | 0.0104 |
+| degen     | 6    | 0   | 1.26   | -38% | 1.23    | -38% | 3     | 204     | -41% | 0.0061 |
+```
+
+The default agent command is `claude -p {task} --output-format json
+--max-turns 8`; swap in any agent with `--agent-cmd` (the `{task}`
+placeholder is replaced with the prompt). To verify the harness without
+API cost, point it at the included mock:
+
+```sh
+python3 bench/degen_bench.py run --agent-cmd 'python3 bench/mock_agent.py {task}'
+```
+
+### Comparing effort levels
+
+Some argue that switching the model's effort/thinking budget matters more
+than a mindset block. Conditions are a JSON file, and each condition can set
+`env` and `extra_args` — so you can put both hypotheses in the same run:
+
+```json
+[
+  { "name": "baseline", "degen": false },
+  { "name": "degen", "degen": true },
+  { "name": "degen-low-effort", "degen": true,
+    "env": { "MAX_THINKING_TOKENS": "1024" } },
+  { "name": "degen-other-model", "degen": true,
+    "extra_args": ["--model", "claude-haiku-4-5"] }
+]
+```
+
+```sh
+python3 bench/degen_bench.py run --conditions bench/conditions.example.json
+```
+
+Caveats: results vary run to run — use `--repeats 5` or more and read the
+medians. Judge by turns and output tokens as well as time: the DEGEN block
+changes *behavior* (fewer turns, shorter output), not raw model latency.
+And faster isn't automatically better — spot-check that the answers are
+still good.
+
 ## Requirements
 
 `bash`, `awk`, and `grep` — available by default on macOS, Linux, and WSL.
+The benchmark additionally needs `python3` (stdlib only).

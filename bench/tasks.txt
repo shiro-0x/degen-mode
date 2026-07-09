@@ -1,0 +1,7 @@
+# One task prompt per line. Keep tasks self-contained (no repo context needed)
+# so baseline and DEGEN runs differ only in the instruction block.
+Write a Python function that parses an ISO 8601 duration string (e.g. P1DT2H30M) into total seconds. Include 3 doctests.
+Write a bash one-liner that finds the 10 largest files under the current directory, excluding .git, with human-readable sizes. Explain it in one sentence.
+You get a bug report: "the login page hangs when the password contains a percent sign". List the 3 most likely causes and the single first check you would run.
+Write a minimal JavaScript debounce function and one usage example. No frameworks.
+Summarize in 5 bullet points what an idempotent HTTP API means and why PUT should be idempotent.
