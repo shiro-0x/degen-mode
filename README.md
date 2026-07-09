@@ -216,12 +216,20 @@ the model sometimes spends extra output on that framing. It doesn't happen
 every time (roughly 1 in 3 tries here), which is exactly why small samples
 are misleading in both directions.
 
-Practical takeaway: **if a task needs bare, parseable output, use
-`--no-announce`**, and don't trust anyone's speedup claim (including the
-mock sample above, and including this one) without running it on your own
-tasks with `--repeats 5` or more. See `ROADMAP.md` for the open question of
-whether the announce feature or DEGEN.min's wording should change as a
-result.
+**Update:** the installed instruction now has an explicit carve-out ("...except
+when the task requires a bare, machine-parseable answer"). Re-testing by
+hand, 5 tries each: the JSON-only task came back clean 5/5 — the carve-out
+worked there. The bash-one-liner task did **not** improve at all — still
+5/5 prefixed with `[DEGEN]`. Our read: the model reliably recognizes "JSON
+only" as the kind of bare output the carve-out means, but doesn't extend
+that same reading to "a bash one-liner, no explanation" — it's still
+prose-adjacent enough that the model treats the prefix as compatible. So
+the carve-out is a partial fix, not a full one.
+
+Practical takeaway unchanged: **if a task needs bare, parseable output, use
+`--no-announce`** rather than relying on the carve-out — and don't trust
+anyone's speedup claim (including the mock sample above, and including this
+one) without running it on your own tasks with `--repeats 5` or more.
 
 ### Comparing effort levels
 
@@ -275,10 +283,13 @@ faster on small, well-scoped tasks, and are comfortable reviewing its output.
 - Anywhere you need a paper trail for *why* an agent was configured a
   particular way (a plain instruction file has no approval workflow).
 - **Tasks that need a bare, machine-parseable answer** (pure JSON, code with
-  no surrounding text, etc). We measured the `[DEGEN]` announce prefix
-  occasionally landing inside otherwise-strict output and breaking a parser
-  — see [the benchmark finding below](#a-real-result-and-what-it-means). Use
-  `--no-announce` for those.
+  no surrounding text, etc). The installed instruction tells the agent to
+  skip the `[DEGEN]` prefix for this case, and that reliably worked in our
+  testing for an explicit "JSON only" request — but did not help at all for
+  a "one-line bash command, no explanation" request, which still got
+  prefixed every time. Don't rely on the carve-out; use `--no-announce` for
+  anything that must be strictly parseable — see [the benchmark finding
+  below](#a-real-result-and-what-it-means).
 
 **Before installing `--global`:** it writes to your home-level config, which
 affects every project on the machine, not just the one you're in. That's why
