@@ -163,11 +163,6 @@ real thing yourself before drawing any conclusion (see below):
 | degen     | 6    | 0   | 1.26   | -38% | 1.23    | -38% | 3     | 204     | -41% | 0.0061 |
 ```
 
-We have not yet published a real, multi-repeat benchmark against a live
-model — that's an open item (see [`ROADMAP.md`](./ROADMAP.md)). Don't take
-speedup numbers on faith from anyone, including us; run it against your own
-tasks and agent.
-
 The default agent command is `claude -p {task} --output-format json
 --max-turns 8`; swap in any agent with `--agent-cmd` (the `{task}`
 placeholder is replaced with the prompt). To verify the harness without
@@ -178,6 +173,55 @@ temp workspace, not the directory you launched the command from:
 ```sh
 python3 bench/degen_bench.py run --agent-cmd 'python3 {mock_agent} {task}'
 ```
+
+### Quality checks — a speedup doesn't count if the answer is wrong
+
+`--tasks` also accepts a `.json` file of `[{"prompt": ..., "check": "shell
+cmd"}]` instead of a plain prompt list (see
+`bench/tasks_with_checks.example.json`). The agent's answer is piped to
+`check` on stdin; exit 0 counts as a pass, and the report gets a `check%`
+column per condition:
+
+```sh
+python3 bench/degen_bench.py run --tasks bench/tasks_with_checks.example.json --repeats 5
+```
+
+### A real result, and what it means
+
+We ran the example above against the real `claude` CLI (n=6 per condition —
+still small, treat as a lead not a verdict):
+
+```
+| condition | runs | err | wall s | Δ    | agent s | Δ    | turns | out tok | Δ     | cost $ | check% |
+|-----------|------|-----|--------|------|---------|------|-------|---------|-------|--------|--------|
+| baseline  | 6    | 0   | 4.33   | +0%  | 3.27    | +0%  | 1     | 22      | +0%   | 0.0309 | 100%   |
+| degen     | 6    | 0   | 5.96   | +37% | 4.86    | +49% | 1     | 235     | +944% | 0.0365 | 50%    |
+```
+
+This is the opposite of what the mock sample above suggests, and we're
+reporting it because it's real: DEGEN was **slower, used far more tokens,
+and passed its quality check less often** on these tasks. Digging into why
+(reproduced by hand, not just in this run): the `[DEGEN]` announce prefix
+(see [Install](#install)) is sometimes emitted even on tasks that explicitly
+ask for a bare, machine-parseable answer ("JSON only, no prose", "one bash
+line, no explanation") —
+
+```
+$ claude -p 'Reply with valid JSON only...' # with DEGEN installed
+[DEGEN] {"a": 4, "b": 6}
+```
+
+— which breaks a strict `json.loads()` or similar check on the answer, and
+the model sometimes spends extra output on that framing. It doesn't happen
+every time (roughly 1 in 3 tries here), which is exactly why small samples
+are misleading in both directions.
+
+Practical takeaway: **if a task needs bare, parseable output, use
+`--no-announce`**, and don't trust anyone's speedup claim (including the
+mock sample above, and including this one) without running it on your own
+tasks with `--repeats 5` or more. See `ROADMAP.md` for the open question of
+whether the announce feature or DEGEN.min's wording should change as a
+result.
 
 ### Comparing effort levels
 
@@ -230,6 +274,11 @@ faster on small, well-scoped tasks, and are comfortable reviewing its output.
   check before merging.
 - Anywhere you need a paper trail for *why* an agent was configured a
   particular way (a plain instruction file has no approval workflow).
+- **Tasks that need a bare, machine-parseable answer** (pure JSON, code with
+  no surrounding text, etc). We measured the `[DEGEN]` announce prefix
+  occasionally landing inside otherwise-strict output and breaking a parser
+  — see [the benchmark finding below](#a-real-result-and-what-it-means). Use
+  `--no-announce` for those.
 
 **Before installing `--global`:** it writes to your home-level config, which
 affects every project on the machine, not just the one you're in. That's why

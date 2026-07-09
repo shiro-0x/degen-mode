@@ -26,6 +26,13 @@ Notes:
     --agent-cmd (e.g. --permission-mode acceptEdits) — only in a sandbox.
   * A condition can set "env" (e.g. MAX_THINKING_TOKENS) and "extra_args"
     (e.g. a different --model), which is how you compare effort levels.
+
+Quality checks (so a speedup can't hide a quality loss):
+  --tasks accepts a .json file of [{"prompt": "...", "check": "shell cmd"}]
+  instead of a plain .txt prompt list. The agent's answer text is piped to
+  "check" on stdin; exit code 0 counts as a pass. The report then shows a
+  check% column per condition alongside speed/cost. See
+  bench/tasks_with_checks.example.json.
 """
 
 import argparse
@@ -54,11 +61,27 @@ DEFAULT_CONDITIONS = [
 
 
 def load_tasks(path):
-    tasks = []
-    for line in Path(path).read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            tasks.append(line)
+    """Return a list of {"prompt": str, "check": str|None} dicts.
+
+    A .json file holds [{"prompt": ..., "check": ...}, ...] (check
+    optional). Anything else is treated as one prompt per line (# comments
+    allowed), with no quality check.
+    """
+    path = Path(path)
+    if path.suffix == ".json":
+        items = json.loads(path.read_text())
+        if not isinstance(items, list) or not items:
+            sys.exit(f"error: {path} must be a non-empty JSON array")
+        tasks = []
+        for it in items:
+            if "prompt" not in it:
+                sys.exit(f"error: every task needs a 'prompt': {it}")
+            tasks.append({"prompt": it["prompt"], "check": it.get("check")})
+        return tasks
+
+    tasks = [{"prompt": line.strip(), "check": None}
+             for line in path.read_text().splitlines()
+             if line.strip() and not line.strip().startswith("#")]
     if not tasks:
         sys.exit(f"error: no tasks found in {path}")
     return tasks
@@ -88,11 +111,26 @@ def parse_agent_json(stdout):
     return {}
 
 
+CHECK_TIMEOUT = 30  # seconds; quality checks should be quick and local
+
+
+def run_check(check_cmd, answer_text):
+    """Run a quality-check shell command with the agent's answer on stdin.
+    Returns True/False, or None if the check itself couldn't run."""
+    try:
+        proc = subprocess.run(check_cmd, shell=True, input=answer_text,
+                              text=True, capture_output=True, timeout=CHECK_TIMEOUT)
+        return proc.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
 def run_once(task, cond, agent_cmd, timeout):
+    prompt = task["prompt"]
     work = Path(tempfile.mkdtemp(prefix="degen-bench-"))
     rec = {
         "condition": cond["name"],
-        "task": task[:120],
+        "task": prompt[:120],
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     try:
@@ -104,7 +142,7 @@ def run_once(task, cond, agent_cmd, timeout):
             )
         env = os.environ.copy()
         env.update({k: str(v) for k, v in (cond.get("env") or {}).items()})
-        cmd = [a.replace("{task}", task).replace("{mock_agent}", str(MOCK_AGENT))
+        cmd = [a.replace("{task}", prompt).replace("{mock_agent}", str(MOCK_AGENT))
                for a in shlex.split(agent_cmd)]
         cmd += [str(a) for a in (cond.get("extra_args") or [])]
 
@@ -128,6 +166,12 @@ def run_once(task, cond, agent_cmd, timeout):
         usage = data.get("usage") or {}
         rec["out_tokens"] = usage.get("output_tokens")
         rec["is_error"] = data.get("is_error", rec.get("exit_code") not in (0, None))
+
+        if task.get("check") and not rec["is_error"]:
+            answer_text = data.get("result", stdout)
+            rec["check_pass"] = run_check(task["check"], answer_text)
+        elif task.get("check"):
+            rec["check_pass"] = False  # agent errored -> can't have passed the check
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return rec
@@ -150,6 +194,7 @@ def summarize(records):
     rows = []
     for c in order:
         rs = groups[c]
+        checked = [r for r in rs if r.get("check_pass") is not None]
         rows.append({
             "condition": c,
             "runs": len(rs),
@@ -159,6 +204,8 @@ def summarize(records):
             "turns": med(rs, "turns"),
             "out_tokens": med(rs, "out_tokens"),
             "cost_usd": med(rs, "cost_usd"),
+            "check_pass_rate": (sum(1 for r in checked if r["check_pass"]) / len(checked)
+                                if checked else None),
         })
     return rows
 
@@ -175,20 +222,33 @@ def delta(v, base):
 
 def print_report(rows):
     base = rows[0]
+    has_checks = any(r["check_pass_rate"] is not None for r in rows)
     print(f"\n## degen-bench results (median of runs; Δ vs `{base['condition']}`)\n")
-    print("| condition | runs | err | wall s | Δ | agent s | Δ | turns | out tok | Δ | cost $ |")
-    print("|---|---|---|---|---|---|---|---|---|---|---|")
+    header = "| condition | runs | err | wall s | Δ | agent s | Δ | turns | out tok | Δ | cost $ |"
+    sep = "|---|---|---|---|---|---|---|---|---|---|---|"
+    if has_checks:
+        header += " check% |"
+        sep += "---|"
+    print(header)
+    print(sep)
     for r in rows:
-        print("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+        line = "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
             r["condition"], r["runs"], r["errors"],
             fmt(r["wall_s"]), delta(r["wall_s"], base["wall_s"]),
             fmt(r["agent_s"]), delta(r["agent_s"], base["agent_s"]),
             fmt(r["turns"], ".0f"),
             fmt(r["out_tokens"], ".0f"), delta(r["out_tokens"], base["out_tokens"]),
             fmt(r["cost_usd"], ".4f"),
-        ))
+        )
+        if has_checks:
+            rate = r["check_pass_rate"]
+            line += " {} |".format("-" if rate is None else f"{rate * 100:.0f}%")
+        print(line)
     print("\nLower is faster/cheaper. Judge by turns and tokens as well as time —")
     print("the DEGEN block changes behavior (fewer turns, shorter output), not just latency.")
+    if has_checks:
+        print("check% is the share of runs whose answer passed its quality check —")
+        print("a speed or token win does not count if quality drops.")
 
 
 def cmd_run(args):
