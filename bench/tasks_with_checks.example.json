@@ -1,0 +1,14 @@
+[
+  {
+    "prompt": "Write a Python function total_seconds(s) that parses an ISO 8601 duration string like 'P1DT2H30M' into total seconds. Reply with ONLY the code in a single ```python fenced block, no prose.",
+    "check": "python3 -c \"import re,sys\nt = sys.stdin.read()\nm = re.search(r'\\x60\\x60\\x60python\\n(.*?)\\x60\\x60\\x60', t, re.S)\nassert m, 'no python code block found'\nns = {}\nexec(m.group(1), ns)\nassert ns['total_seconds']('P1DT2H30M') == 95400, 'wrong result for P1DT2H30M (1 day + 2h + 30m = 95400s)'\n\""
+  },
+  {
+    "prompt": "Reply with valid JSON only (no prose, no code fences): an object with keys \"a\" and \"b\" whose integer values sum to 10.",
+    "check": "python3 -c \"import json,sys\nd = json.loads(sys.stdin.read())\nassert d['a'] + d['b'] == 10\n\""
+  },
+  {
+    "prompt": "Write a bash one-liner (single line, no explanation) that prints the numbers 1 through 5, one per line.",
+    "check": "python3 -c \"import sys, re, subprocess\ns = sys.stdin.read().strip()\ns = re.sub(r'^\\x60+|\\x60+$', '', s).strip()\ns = re.sub(r'^\\x60\\x60\\x60(bash|sh)?\\n|\\n\\x60\\x60\\x60$', '', s).strip()\nout = subprocess.run(['bash', '-c', s], capture_output=True, text=True, timeout=10).stdout\nassert out == '1\\n2\\n3\\n4\\n5\\n', f'unexpected output: {out!r}'\n\""
+  }
+]

@@ -1,7 +1,7 @@
 # degen-mode
 
-Install the **DEGEN** mindset into every AI coding agent you use — with one
-command, and remove it just as easily.
+A small, reversible installer for a fast-but-safe action policy across AI
+coding agents — with one command, and remove it just as easily.
 
 DEGEN is a builder mindset: move fast, test boldly, stay honest, and create
 real value without losing responsibility. The full principles are in
@@ -22,14 +22,20 @@ Show progress.
 ## Install
 
 ```sh
-./degen.sh install                  # into every known agent file
-./degen.sh install --agent claude   # into just one agent (e.g. the one you're using now)
-./degen.sh install --global         # into your home-level agent files
+./degen.sh install                          # into every known agent file
+./degen.sh install --agent claude           # into just one agent (e.g. the one you're using now)
+./degen.sh install --dry-run                # preview only — writes nothing
+./degen.sh install --global --yes           # into your home-level agent files
 ```
 
 The DEGEN block is inserted between marker comments, so it never clobbers
 instructions you already have — existing files are appended to, and re-running
 `install` updates the block in place instead of duplicating it.
+
+Not sure what it'll do? Run it with `--dry-run` first — it prints a unified
+diff of every file it would touch and writes nothing. `--global` (home-level
+config, affecting every project on the machine) refuses to run at all unless
+you either pass `--yes` or are just previewing with `--dry-run`.
 
 So you can't forget the mode is active, the installed block also tells the
 agent to **start every reply with `[DEGEN]`**. The tag costs a few tokens and
@@ -56,7 +62,8 @@ without `--agent` to roll it out to the rest.
 ```sh
 ./degen.sh uninstall                  # remove from this project's agent files
 ./degen.sh uninstall --agent claude   # remove from just one agent
-./degen.sh uninstall --global         # remove from your home-level agent files
+./degen.sh uninstall --dry-run        # preview what would be removed
+./degen.sh uninstall --global --yes   # remove from your home-level agent files
 ```
 
 Uninstall removes only the managed DEGEN block. Files that contained nothing
@@ -89,12 +96,14 @@ files and **updates** any tool-specific files that already exist:
 With `--global`, it targets home-level config instead
 (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, …).
 
-**Grok:** there's no confirmed dedicated config-file convention for Grok
-tooling, so `--agent grok` targets the same `AGENTS.md` cross-tool standard
-file as `codex` (it's not included in the plain default `install` to avoid
-writing that file twice — use it explicitly: `./degen.sh install --agent
-grok`). If your Grok tool actually reads a different file, open an issue or
-tell us the path and we'll add a dedicated mapping.
+**Grok — experimental / unverified mapping:** there's no confirmed dedicated
+config-file convention for Grok tooling, so `--agent grok` targets the same
+`AGENTS.md` cross-tool standard file as `codex`, as a guess (it's not
+included in the plain default `install` to avoid writing that file twice —
+use it explicitly: `./degen.sh install --agent grok`). `./degen.sh agents`
+labels it `(experimental)` for the same reason. If your Grok tool actually
+reads a different file, open an issue or tell us the path and we'll add a
+verified mapping.
 
 ## Options
 
@@ -102,11 +111,14 @@ tell us the path and we'll add a dedicated mapping.
 | -------------- | ------------------------------------------------------------------------- |
 | `--agent NAME` | Target only this agent (repeatable, or comma-separated). Always creates its file, since you asked for it explicitly. See `./degen.sh agents`. |
 | `--no-announce` | Omit the `[DEGEN]` reply-prefix instruction from the installed block (on by default). |
-| `--global`     | Operate on home-level (`~`) agent files instead of the project.          |
+| `--dry-run`    | Show what would change, and a diff of each file, without writing anything. |
+| `--global`     | Operate on home-level (`~`) agent files instead of the project. Requires `--yes` (or `--dry-run` to preview first). |
+| `--yes`        | Confirm a `--global` install/uninstall.                                  |
 | `--dir PATH`   | Operate on a specific project directory (default: current dir).         |
 | `--all`        | Write to every known target even if the file doesn't exist yet. Ignored when `--agent` is set. |
 
-You can override the target list entirely with an environment variable:
+You can override the target list entirely with an environment variable
+(space-separated paths — paths containing spaces aren't supported):
 
 ```sh
 DEGEN_TARGETS="AGENTS.md docs/agent.md" ./degen.sh install
@@ -139,7 +151,10 @@ python3 bench/degen_bench.py run --repeats 5 --tasks bench/tasks.txt
 python3 bench/degen_bench.py report bench/results/<file>.jsonl
 ```
 
-Sample output:
+Sample output — **from the included mock agent** (`bench/mock_agent.py`),
+which is a synthetic stand-in built to simulate a speedup, not a measurement
+of any real model. It exists to prove the harness works end-to-end. Run the
+real thing yourself before drawing any conclusion (see below):
 
 ```
 | condition | runs | err | wall s | Δ    | agent s | Δ    | turns | out tok | Δ    | cost $ |
@@ -151,11 +166,62 @@ Sample output:
 The default agent command is `claude -p {task} --output-format json
 --max-turns 8`; swap in any agent with `--agent-cmd` (the `{task}`
 placeholder is replaced with the prompt). To verify the harness without
-API cost, point it at the included mock:
+API cost, point it at the included mock — use the `{mock_agent}` placeholder
+rather than a relative path, since each run's working directory is a fresh
+temp workspace, not the directory you launched the command from:
 
 ```sh
-python3 bench/degen_bench.py run --agent-cmd 'python3 bench/mock_agent.py {task}'
+python3 bench/degen_bench.py run --agent-cmd 'python3 {mock_agent} {task}'
 ```
+
+### Quality checks — a speedup doesn't count if the answer is wrong
+
+`--tasks` also accepts a `.json` file of `[{"prompt": ..., "check": "shell
+cmd"}]` instead of a plain prompt list (see
+`bench/tasks_with_checks.example.json`). The agent's answer is piped to
+`check` on stdin; exit 0 counts as a pass, and the report gets a `check%`
+column per condition:
+
+```sh
+python3 bench/degen_bench.py run --tasks bench/tasks_with_checks.example.json --repeats 5
+```
+
+### A real result, and what it means
+
+We ran the example above against the real `claude` CLI (n=6 per condition —
+still small, treat as a lead not a verdict):
+
+```
+| condition | runs | err | wall s | Δ    | agent s | Δ    | turns | out tok | Δ     | cost $ | check% |
+|-----------|------|-----|--------|------|---------|------|-------|---------|-------|--------|--------|
+| baseline  | 6    | 0   | 4.33   | +0%  | 3.27    | +0%  | 1     | 22      | +0%   | 0.0309 | 100%   |
+| degen     | 6    | 0   | 5.96   | +37% | 4.86    | +49% | 1     | 235     | +944% | 0.0365 | 50%    |
+```
+
+This is the opposite of what the mock sample above suggests, and we're
+reporting it because it's real: DEGEN was **slower, used far more tokens,
+and passed its quality check less often** on these tasks. Digging into why
+(reproduced by hand, not just in this run): the `[DEGEN]` announce prefix
+(see [Install](#install)) is sometimes emitted even on tasks that explicitly
+ask for a bare, machine-parseable answer ("JSON only, no prose", "one bash
+line, no explanation") —
+
+```
+$ claude -p 'Reply with valid JSON only...' # with DEGEN installed
+[DEGEN] {"a": 4, "b": 6}
+```
+
+— which breaks a strict `json.loads()` or similar check on the answer, and
+the model sometimes spends extra output on that framing. It doesn't happen
+every time (roughly 1 in 3 tries here), which is exactly why small samples
+are misleading in both directions.
+
+Practical takeaway: **if a task needs bare, parseable output, use
+`--no-announce`**, and don't trust anyone's speedup claim (including the
+mock sample above, and including this one) without running it on your own
+tasks with `--repeats 5` or more. See `ROADMAP.md` for the open question of
+whether the announce feature or DEGEN.min's wording should change as a
+result.
 
 ### Comparing effort levels
 
@@ -184,7 +250,51 @@ changes *behavior* (fewer turns, shorter output), not raw model latency.
 And faster isn't automatically better — spot-check that the answers are
 still good.
 
+## Safety & limitations
+
+Read this before installing, especially with `--global`.
+
+**Who this is for:** individual developers who want their agent to move
+faster on small, well-scoped tasks, and are comfortable reviewing its output.
+
+**What DEGEN does not do:**
+- It does not guarantee code quality, correctness, or security. It's an
+  instruction block, not a test suite — review the agent's work the same as
+  you would without it.
+- It does not make destructive operations safe. The agent still decides what
+  "safe" means at a given moment; DEGEN asks for judgment, it doesn't enforce
+  it.
+- It cannot force an agent to read it. Some tools may ignore instruction
+  files entirely, or only read them in certain contexts.
+
+**Where it's a poor fit:**
+- Large or ambiguous refactors, where "move fast" is the wrong instinct.
+- Production infrastructure, deployments, or anything hard to reverse.
+- Team settings without code review — a fast agent still needs a human
+  check before merging.
+- Anywhere you need a paper trail for *why* an agent was configured a
+  particular way (a plain instruction file has no approval workflow).
+- **Tasks that need a bare, machine-parseable answer** (pure JSON, code with
+  no surrounding text, etc). We measured the `[DEGEN]` announce prefix
+  occasionally landing inside otherwise-strict output and breaking a parser
+  — see [the benchmark finding below](#a-real-result-and-what-it-means). Use
+  `--no-announce` for those.
+
+**Before installing `--global`:** it writes to your home-level config, which
+affects every project on the machine, not just the one you're in. That's why
+`degen.sh` refuses to run with `--global` unless you pass `--yes` (or are just
+previewing with `--dry-run`) — prefer a project-local install (the default,
+no flag needed) unless you specifically want the home-level one.
+
+If you hit a case where DEGEN's instructions push an agent toward a bad
+outcome (e.g. skipping a check it shouldn't have), please open an issue —
+that's exactly the kind of failure this project wants to learn from.
+
 ## Requirements
 
-`bash`, `awk`, and `grep` — available by default on macOS, Linux, and WSL.
-The benchmark additionally needs `python3` (stdlib only).
+`bash`, `awk`, `grep`, and `diff` — available by default on macOS, Linux, and
+WSL. The benchmark additionally needs `python3` (stdlib only).
+
+## License
+
+[MIT](./LICENSE)

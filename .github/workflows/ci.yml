@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck degen.sh tests/smoke.sh
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run install/uninstall smoke tests
+        run: ./tests/smoke.sh
+
+  bench-harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Verify degen-bench harness with the mock agent (no API cost)
+        run: |
+          python3 bench/degen_bench.py run \
+            --agent-cmd 'python3 {mock_agent} {task}' \
+            --repeats 1
