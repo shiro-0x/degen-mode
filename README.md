@@ -31,6 +31,12 @@ The DEGEN block is inserted between marker comments, so it never clobbers
 instructions you already have — existing files are appended to, and re-running
 `install` updates the block in place instead of duplicating it.
 
+So you can't forget the mode is active, the installed block also tells the
+agent to **start every reply with `[DEGEN]`**. The tag costs a few tokens and
+nothing more. If you don't want it, install with `--no-announce`; re-running
+`install` with or without the flag toggles it, and `status` shows which mode
+each file is in (`installed` vs `installed (silent)`).
+
 ## Try it on one agent first
 
 Applying DEGEN to every agent at once isn't always what you want. If you're
@@ -95,6 +101,7 @@ tell us the path and we'll add a dedicated mapping.
 | Option         | Description                                                              |
 | -------------- | ------------------------------------------------------------------------- |
 | `--agent NAME` | Target only this agent (repeatable, or comma-separated). Always creates its file, since you asked for it explicitly. See `./degen.sh agents`. |
+| `--no-announce` | Omit the `[DEGEN]` reply-prefix instruction from the installed block (on by default). |
 | `--global`     | Operate on home-level (`~`) agent files instead of the project.          |
 | `--dir PATH`   | Operate on a specific project directory (default: current dir).         |
 | `--all`        | Write to every known target even if the file doesn't exist yet. Ignored when `--agent` is set. |
