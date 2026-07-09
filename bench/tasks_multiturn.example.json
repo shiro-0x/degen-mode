@@ -1,0 +1,14 @@
+[
+  {
+    "prompt": "In the current directory, create a file slug.py exposing a function slugify(s) that turns a string into a lowercase, hyphen-separated URL slug (e.g. 'Hello, World!' -> 'hello-world'). Keep it minimal and self-contained.",
+    "check": "python3 -c \"import slug; assert slug.slugify('Hello, World!')=='hello-world', slug.slugify('Hello, World!')\""
+  },
+  {
+    "prompt": "Create a file fizzbuzz.py in the current directory that, when run with `python3 fizzbuzz.py`, prints the numbers 1 to 15, one per line, replacing multiples of 3 with Fizz, multiples of 5 with Buzz, and multiples of both with FizzBuzz.",
+    "check": "test \"$(python3 fizzbuzz.py)\" = \"$(printf '1\\n2\\nFizz\\n4\\nBuzz\\nFizz\\n7\\n8\\nFizz\\nBuzz\\n11\\nFizz\\n13\\n14\\nFizzBuzz')\""
+  },
+  {
+    "prompt": "Create a file parse_kv.py in the current directory with a function parse(text) that parses newline-separated key=value pairs into a dict. For example parse('a=1\\nb=2') should return {'a': '1', 'b': '2'}. Keep it small.",
+    "check": "python3 -c \"import parse_kv; assert parse_kv.parse('a=1\\nb=2')=={'a':'1','b':'2'}, parse_kv.parse('a=1\\nb=2')\""
+  }
+]

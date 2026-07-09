@@ -123,14 +123,36 @@ DEGEN says: record failures, keep an improvement log. This is that log.
   out-of-order parallel completion could pick the wrong reference — now the
   intended condition order is stamped per record and used for sorting.
   Verified end-to-end against the real `claude` CLI.
-- [ ] **Larger real benchmark run** (≥5 repeats, more/varied tasks) — the
-  isolation experiment above (n=12/condition) supersedes the original n=6
-  lead, but a broader task mix is still worth running before treating the
-  "~+10% fixed cost, no quality loss without announce" conclusion as solid.
-  The new `ab --parallel` tooling makes a bigger run cheap to do; the still-
-  open question is DEGEN's effect on *ambiguous / multi-turn* tasks (all
-  benchmark tasks so far were single-turn, which never exercises the "fewer
-  turns" mechanism DEGEN is meant to trigger).
+- [x] **Multi-turn / agentic tasks — the question DEGEN was actually built
+  for.** All prior benchmarks were single-turn (turns always 1), which never
+  exercises the "build small / fewer turns" mechanism. Added workspace-aware
+  checks (the `check` command now runs with cwd = the run's workspace, so it
+  can verify files a build task produced, not just the reply text) and
+  `bench/tasks_multiturn.example.json`: three small, mildly under-specified
+  "write a working file" tasks, each verified by running the produced code.
+  Ran baseline vs degen against real `claude` (`--permission-mode
+  acceptEdits`, `--max-turns 12`), n=9 per condition (3 tasks x 3 repeats),
+  every run produced working code (100% check both sides). Result:
+    - Overall: a wash — wall 11.72 → 11.19s (-4%), tot tok 97.5k → 98.2k
+      (+1%), turns 3 vs 3. Notably NOT the net-negative seen on trivial
+      tasks: the block's fixed cost stops mattering once the task is
+      substantial.
+    - Per task (the honest, mixed story): `slug` baseline 4 turns/130k →
+      degen 3 turns/98k (**DEGEN won**, -25% tokens, held across all 3
+      repeats — baseline over-worked it, exactly DEGEN's thesis); `parse_kv`
+      baseline 2 turns/65k → degen 3 turns/98k (**baseline won**, DEGEN added
+      a turn); `fizzbuzz` identical (tie).
+    - Read: on real multi-turn work DEGEN is **roughly neutral** — it nudges
+      toward "smallest thing that works," which helps when the model would
+      gold-plate and hurts when it would have stopped anyway. Not a clear win
+      or loss. Caveats: 3 similar coding tasks, n=3 each, high variance
+      (turns 2–5); acceptEdits meant the agent couldn't run its own code, so
+      no exploratory/test-driven loops covered. Whole run cost ~$1.50.
+- [ ] **Bigger, more varied multi-turn run.** The n=9 result above is a lead,
+  not a verdict. Worth extending to more tasks, more repeats, and genuinely
+  exploratory tasks (a `bypassPermissions` sandbox so the agent can run/test
+  its own code) before drawing a firm conclusion. `ab --parallel` makes this
+  cheap.
 
 ## Later / maybe
 
