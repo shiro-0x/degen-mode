@@ -1,0 +1,16 @@
+[
+  {
+    "prompt": "The file calc.py in the current directory has a bug: the function average(nums) is supposed to return the arithmetic mean of a list of numbers, but it doesn't for some inputs. Find and fix the bug. Keep the fix minimal.",
+    "setup_files": {
+      "calc.py": "def average(nums):\n    total = 0\n    for n in nums:\n        total += n\n    return total // len(nums)  # integer division: wrong for non-exact means\n"
+    },
+    "check": "python3 -c \"import calc\nassert abs(calc.average([1,2,3,4]) - 2.5) < 1e-9, calc.average([1,2,3,4])\nassert abs(calc.average([10]) - 10) < 1e-9\nassert abs(calc.average([2,2,2]) - 2) < 1e-9\nassert abs(calc.average([1,2]) - 1.5) < 1e-9\n\""
+  },
+  {
+    "prompt": "The file dedupe.py in the current directory has a working but slow function dedupe(items) that removes duplicate values from a list while preserving order. Improve its performance without changing its behavior.",
+    "setup_files": {
+      "dedupe.py": "def dedupe(items):\n    result = []\n    for x in items:\n        if x not in result:\n            result.append(x)\n    return result\n"
+    },
+    "check": "python3 -c \"import dedupe\nassert dedupe.dedupe([1,1,2,3,3,3,2,4]) == [1,2,3,4], dedupe.dedupe([1,1,2,3,3,3,2,4])\nassert dedupe.dedupe([]) == []\nassert dedupe.dedupe([5]) == [5]\nassert dedupe.dedupe(['b','a','b','c','a']) == ['b','a','c']\n\""
+  }
+]

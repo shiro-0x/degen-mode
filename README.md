@@ -281,51 +281,65 @@ benchmark on your own tasks with `--repeats 5` or more.
 Everything above used single-turn tasks (`turns` was always 1). But DEGEN's
 whole thesis — "build small, smallest safe action, ship" — is about
 *agentic* work: tasks where the model can go around several times and might
-over-engineer. So we built `bench/tasks_multiturn.example.json`: three small,
-mildly under-specified "write a working file" tasks, each verified by
-actually running the produced code (the harness runs `check` with its cwd set
-to the run's workspace, so it can inspect files the agent wrote, not just the
-reply text). Run with a permissive agent command:
+over-engineer. So we built two task sets, each verified by actually running
+the code the agent produced (the harness runs `check` with its cwd set to
+the run's workspace, so it can inspect files, not just the reply text):
+
+- `bench/tasks_multiturn.example.json` — three "write a working file from
+  scratch" tasks
+- `bench/tasks_multiturn2.example.json` — a debug-fix task (a real bug seeded
+  via `setup_files`) and an optimize-existing-code task, exercising
+  exploration/diagnosis rather than pure generation
 
 ```sh
-python3 bench/degen_bench.py run --tasks bench/tasks_multiturn.example.json \
-  --agent-cmd 'claude -p {task} --output-format json --max-turns 12 --permission-mode acceptEdits' \
-  --repeats 3 --parallel 3
+python3 bench/degen_bench.py run \
+  --tasks bench/tasks_multiturn.example.json,bench/tasks_multiturn2.example.json \
+  --agent-cmd 'claude -p {task} --output-format json --max-turns 15 --allowedTools "Bash Write Edit Read"' \
+  --repeats 5 --parallel 5
 ```
 
-Result (n=9 per condition, real `claude`, every run produced working code —
-100% check pass on both sides):
+(`--allowedTools` grants Bash so the agent can actually run/test its own code
+— `--permission-mode bypassPermissions` is rejected outright when running as
+root, which this sandbox does; `acceptEdits` alone doesn't cover Bash.)
+
+**First pass** (n=9/condition, the 3 from-scratch tasks only, real `claude`,
+100% check pass both sides) looked genuinely mixed per-task: DEGEN won on one
+task (`slug`, −25% tokens, held across all 3 repeats), baseline won on
+another (`parse_kv`), one was a tie — net a wash overall.
+
+**Bigger follow-up** (n=25/condition — 5 tasks × 5 repeats, all 3 original
+tasks plus the 2 new debug-fix/optimize tasks, ~$4 total, 100% check pass on
+every single run, both sides):
 
 ```
 | condition | runs | wall s | Δwall | turns | tot tok | Δtot | check% |
 |-----------|------|--------|-------|-------|---------|------|--------|
-| baseline  | 9    | 11.72  | +0%   | 3     | 97522   | +0%  | 100%   |
-| degen     | 9    | 11.19  | -4%   | 3     | 98168   | +1%  | 100%   |
+| baseline  | 25   | 11.70  | +0%   | 3     | 97409   | +0%  | 100%   |
+| degen     | 25   | 11.79  | +1%   | 3     | 97994   | +1%  | 100%   |
 ```
 
-Overall: **basically no difference** — and note this is *not* the net-negative
-we saw on trivial tasks, so the block's fixed cost stops mattering once the
-task itself is substantial. But the per-task breakdown is the honest story,
-because it's genuinely mixed:
+Per-task (n=5 each):
 
-| task | baseline | degen | who won |
+| task | baseline | degen | verdict |
 |------|----------|-------|---------|
-| slug.py     | 4 turns / 130k tok | 3 turns / 98k tok | **DEGEN** (baseline over-worked it) |
-| parse_kv.py | 2 turns / 65k tok  | 3 turns / 98k tok | **baseline** (DEGEN added a turn) |
-| fizzbuzz.py | 3 turns / 98k tok  | 3 turns / 98k tok | tie |
+| slug (build)         | 3 turns / 97.6k tok | 3 turns / 98.0k tok | tie — the earlier "DEGEN win" **did not replicate** at higher n |
+| parse_kv (build)     | 2 turns / 64.7k tok | 3 turns / 97.9k tok | baseline wins (extra DEGEN turn, replicates the first pass) |
+| fizzbuzz (build)     | 3 turns / 97.5k tok | 3 turns / 98.2k tok | tie |
+| calc.py (debug-fix)  | 3 turns / 97.3k tok | 3 turns / 97.9k tok | tie |
+| dedupe.py (optimize) | 4 turns / 131.6k tok | 4 turns / 131.5k tok | tie on turns/tokens; degen notably faster wall-clock (15.0s vs 22.5s) with identical token/turn counts — unexplained, likely per-call latency variance rather than a DEGEN effect, flagged rather than spun as a win |
 
-DEGEN helped exactly where its thesis predicts — the `slug` task, where
-baseline took an extra pass to polish and DEGEN shipped the minimal working
-version (−25% tokens, quality identical, and this held across all 3 repeats).
-But it *cost* an extra turn on `parse_kv`, and did nothing on `fizzbuzz`, so
-the average is a wash. Honest read: **on real multi-turn work DEGEN is roughly
-neutral, not the clear win or clear loss either extreme would suggest — it
-nudges the model toward "smallest thing that works," which helps when the
-model would otherwise gold-plate and hurts when it would have stopped anyway.**
-Caveats: only 3 similar coding tasks, n=3 each, high variance (turns ranged
-2–5); `acceptEdits` means the agent couldn't run its own code to self-test, so
-this doesn't cover exploratory/test-driven loops. A bigger, more varied run is
-the obvious next step (the whole thing cost ~$1.50, so it's cheap to extend).
+**Honest read, updated:** the apparent `slug` win from the first, smaller pass
+was itself noise — a textbook example of why we keep saying not to trust
+small samples, including our own. With 5×  the data and 2 new task types
+(debug-fix, optimize), **DEGEN is statistically indistinguishable from
+baseline** on turns, tokens, and wall time for real multi-turn coding work,
+and quality was identical (100% vs 100%) across all 50 runs. It doesn't hurt
+here (unlike the trivial single-turn tasks earlier, where the announce
+prefix did), but on this evidence it doesn't help either. Caveats: still only
+5 tasks, all short coding exercises in one language; a genuinely large,
+varied corpus (different languages, longer tasks, real ambiguity) is the
+natural next step, and `--tasks a.json,b.json` plus `--parallel` make that
+cheap to run.
 
 ### Comparing effort levels
 
