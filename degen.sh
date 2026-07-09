@@ -16,10 +16,13 @@
 # Options:
 #   --agent <name>  Target only this agent (repeatable, or comma-separated).
 #                   Run `./degen.sh agents` to see valid names.
-#   --no-announce   Omit the announce line. By default the installed block
-#                   tells the agent to start every reply with "[DEGEN]", so
-#                   you can't forget the mode is active. Re-run install with
-#                   or without this flag to toggle it.
+#   --announce      Add an announce line telling the agent to start replies
+#                   with "[DEGEN]" so you can't forget the mode is active.
+#                   OFF by default: benchmarking showed the prefix leaks into
+#                   strict-format output (pure JSON, code-only) and breaks
+#                   parsers/quality checks. Re-run install with or without
+#                   this flag to toggle it. (--no-announce is still accepted
+#                   and matches the default.)
 #   --dry-run       Show what would change (and a diff of each file) without
 #                   writing anything. Works with both install and uninstall.
 #   --global        Operate on home-level (~) agent files instead of the project.
@@ -86,7 +89,7 @@ if [ $# -gt 0 ]; then shift; fi
 
 GLOBAL=0
 ALL=0
-ANNOUNCE=1
+ANNOUNCE=0
 DRYRUN=0
 YES=0
 DIR="$PWD"
@@ -96,7 +99,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --global)      GLOBAL=1 ;;
     --all)         ALL=1 ;;
-    --no-announce) ANNOUNCE=0 ;;
+    --announce)    ANNOUNCE=1 ;;
+    --no-announce) ANNOUNCE=0 ;;  # matches the default; kept for compatibility
     --dry-run)     DRYRUN=1 ;;
     --yes)         YES=1 ;;
     --dir)    shift; DIR="${1:?--dir needs a path}" ;;
@@ -317,9 +321,9 @@ cmd_status() {
   for f in "${CREATE_FILES[@]}" "${UPDATE_FILES[@]}"; do
     if has_block "$f"; then
       if grep -qF "$DEGEN_ANNOUNCE" "$f"; then
-        echo "installed             $f"
+        echo "installed (announce)  $f"
       else
-        echo "installed (silent)    $f"
+        echo "installed             $f"
       fi
       any=1
     elif [ -f "$f" ]; then
