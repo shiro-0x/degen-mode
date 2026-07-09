@@ -38,7 +38,7 @@ set -euo pipefail
 
 DEGEN_START="<!-- DEGEN:START — managed by degen.sh, do not edit inside this block -->"
 DEGEN_END="<!-- DEGEN:END -->"
-DEGEN_ANNOUNCE='Announce: start every reply with "[DEGEN]".'
+DEGEN_ANNOUNCE='Announce: start every reply with "[DEGEN]", except when the task requires a bare, machine-parseable answer (pure JSON, code-only, etc.) — then omit it so the output stays parseable.'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SRC="$SCRIPT_DIR/DEGEN.min"

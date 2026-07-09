@@ -74,16 +74,19 @@ DEGEN says: record failures, keep an improvement log. This is that log.
   README benchmarking section and Safety & limitations. This is a real,
   reproducible cost of the announce feature as currently implemented,
   not just noise — see the next item.
-- [ ] **Announce feature vs. strict-output tasks.** *(needs owner decision.)*
-  Given the finding above, options: (a) leave `--announce` on by default as
-  today and rely on users passing `--no-announce` for strict-format tasks
-  (current state); (b) have the installed instruction explicitly carve out
-  an exception ("...except when the task requires bare machine-parseable
-  output"); (c) turn announce off by default. (a) keeps the original
-  "can't forget it's on" goal fully intact and is the status quo; (b) adds
-  wording complexity to DEGEN.min for a corner case; (c) contradicts the
-  explicit "on by default" requirement this feature was built to satisfy.
-  No change made pending a decision.
+- [x] **Announce feature vs. strict-output tasks — decided (b), partially
+  effective.** Owner chose to add an explicit carve-out to the announce
+  instruction rather than change DEGEN.min itself or the default:
+  `Announce: start every reply with "[DEGEN]", except when the task requires
+  a bare, machine-parseable answer (pure JSON, code-only, etc.) — then omit
+  it so the output stays parseable.` Re-tested by hand, 5 tries each,
+  against real `claude`: the JSON-only task came back clean 5/5 (carve-out
+  worked); the bash-one-liner task was **still prefixed 5/5** (carve-out did
+  not help at all there) — the model reliably reads "JSON only" as needing
+  bare output but doesn't extend that reading to "a bash one-liner, no
+  explanation." Documented as a partial mitigation in the README, not a
+  fix: `--no-announce` remains the reliable answer for strict-output tasks.
+  Re-running `install` updates existing installs to the new wording.
 - [ ] **DEGEN.min wording / safe variant.** *(needs owner decision — this is
   the manifesto.)* Reviewers flagged `unclear→simple` and `works→push` as
   risky when read literally by an agent. Options: (a) amend the core text
