@@ -10,14 +10,18 @@ Usage:
   bench/degen_bench.py run                          # baseline vs degen, default tasks
   bench/degen_bench.py run --repeats 5
   bench/degen_bench.py run --conditions bench/conditions.example.json
-  bench/degen_bench.py run --agent-cmd 'python3 bench/mock_agent.py {task}'
+  bench/degen_bench.py run --agent-cmd 'python3 {mock_agent} {task}'
   bench/degen_bench.py report bench/results/<file>.jsonl
 
 The default agent command is:
   claude -p {task} --output-format json --max-turns 8
 
 Notes:
-  * {task} in --agent-cmd is replaced with the task prompt (safely quoted).
+  * {task} in --agent-cmd is replaced with the task prompt.
+  * {mock_agent} is replaced with the absolute path to bench/mock_agent.py —
+    use it instead of a relative path, since each run executes with its cwd
+    set to a fresh temp workspace (so the agent sees the installed
+    instruction files), not the directory you launched degen_bench.py from.
   * If your tasks need file edits or shell access, add a permission flag to
     --agent-cmd (e.g. --permission-mode acceptEdits) — only in a sandbox.
   * A condition can set "env" (e.g. MAX_THINKING_TOKENS) and "extra_args"
@@ -40,6 +44,7 @@ from pathlib import Path
 BENCH_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BENCH_DIR.parent
 DEGEN_SH = REPO_ROOT / "degen.sh"
+MOCK_AGENT = BENCH_DIR / "mock_agent.py"
 
 DEFAULT_AGENT_CMD = "claude -p {task} --output-format json --max-turns 8"
 DEFAULT_CONDITIONS = [
@@ -99,7 +104,8 @@ def run_once(task, cond, agent_cmd, timeout):
             )
         env = os.environ.copy()
         env.update({k: str(v) for k, v in (cond.get("env") or {}).items()})
-        cmd = [a.replace("{task}", task) for a in shlex.split(agent_cmd)]
+        cmd = [a.replace("{task}", task).replace("{mock_agent}", str(MOCK_AGENT))
+               for a in shlex.split(agent_cmd)]
         cmd += [str(a) for a in (cond.get("extra_args") or [])]
 
         t0 = time.monotonic()
