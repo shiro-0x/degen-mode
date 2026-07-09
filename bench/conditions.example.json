@@ -1,0 +1,12 @@
+[
+  { "name": "baseline", "degen": false },
+  { "name": "degen", "degen": true },
+
+  { "name": "baseline-low-effort", "degen": false,
+    "env": { "MAX_THINKING_TOKENS": "1024" } },
+  { "name": "degen-low-effort", "degen": true,
+    "env": { "MAX_THINKING_TOKENS": "1024" } },
+
+  { "name": "degen-other-model", "degen": true,
+    "extra_args": ["--model", "claude-haiku-4-5"] }
+]
