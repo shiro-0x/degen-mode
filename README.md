@@ -37,11 +37,14 @@ diff of every file it would touch and writes nothing. `--global` (home-level
 config, affecting every project on the machine) refuses to run at all unless
 you either pass `--yes` or are just previewing with `--dry-run`.
 
-So you can't forget the mode is active, the installed block also tells the
-agent to **start every reply with `[DEGEN]`**. The tag costs a few tokens and
-nothing more. If you don't want it, install with `--no-announce`; re-running
-`install` with or without the flag toggles it, and `status` shows which mode
-each file is in (`installed` vs `installed (silent)`).
+Optionally, `--announce` adds an instruction telling the agent to **start
+every reply with `[DEGEN]`**, so you can't forget the mode is active. This
+is **off by default**: our own benchmark measured the prefix leaking into
+strict-format output (pure JSON, code-only answers) and breaking parsers —
+see [the benchmark findings below](#a-real-result-and-what-it-means). Enable
+it only if your tasks are conversational; re-running `install` with or
+without the flag toggles it, and `status` shows which mode each file is in
+(`installed` vs `installed (announce)`).
 
 ## Try it on one agent first
 
@@ -110,7 +113,7 @@ verified mapping.
 | Option         | Description                                                              |
 | -------------- | ------------------------------------------------------------------------- |
 | `--agent NAME` | Target only this agent (repeatable, or comma-separated). Always creates its file, since you asked for it explicitly. See `./degen.sh agents`. |
-| `--no-announce` | Omit the `[DEGEN]` reply-prefix instruction from the installed block (on by default). |
+| `--announce`   | Add the `[DEGEN]` reply-prefix instruction to the installed block. Off by default — measured to break strict-format output (see benchmark findings). `--no-announce` is still accepted and matches the default. |
 | `--dry-run`    | Show what would change, and a diff of each file, without writing anything. |
 | `--global`     | Operate on home-level (`~`) agent files instead of the project. Requires `--yes` (or `--dry-run` to preview first). |
 | `--yes`        | Confirm a `--global` install/uninstall.                                  |
@@ -216,20 +219,41 @@ the model sometimes spends extra output on that framing. It doesn't happen
 every time (roughly 1 in 3 tries here), which is exactly why small samples
 are misleading in both directions.
 
-**Update:** the installed instruction now has an explicit carve-out ("...except
-when the task requires a bare, machine-parseable answer"). Re-testing by
-hand, 5 tries each: the JSON-only task came back clean 5/5 — the carve-out
-worked there. The bash-one-liner task did **not** improve at all — still
-5/5 prefixed with `[DEGEN]`. Our read: the model reliably recognizes "JSON
-only" as the kind of bare output the carve-out means, but doesn't extend
-that same reading to "a bash one-liner, no explanation" — it's still
-prose-adjacent enough that the model treats the prefix as compatible. So
-the carve-out is a partial fix, not a full one.
+**First mitigation attempt:** we added an explicit carve-out to the announce
+instruction ("...except when the task requires a bare, machine-parseable
+answer"). Re-testing by hand, 5 tries each: the JSON-only task came back
+clean 5/5, but the bash-one-liner task did **not** improve at all — still
+5/5 prefixed with `[DEGEN]`. A partial fix, not a full one.
 
-Practical takeaway unchanged: **if a task needs bare, parseable output, use
-`--no-announce`** rather than relying on the carve-out — and don't trust
-anyone's speedup claim (including the mock sample above, and including this
-one) without running it on your own tasks with `--repeats 5` or more.
+**Isolation experiment (what actually causes the slowdown):** to separate
+the announce line's effect from the DEGEN block itself, we ran three
+conditions — baseline, DEGEN with announce, DEGEN without announce — same
+three checked tasks, n=12 per condition (36 real runs, carve-out wording
+included):
+
+```
+| condition      | runs | err | agent s | Δ    | out tok | Δ    | check% |
+|----------------|------|-----|---------|------|---------|------|--------|
+| baseline       | 12   | 0   | 3.64    | +0%  | 20      | +0%  | 100%   |
+| degen-announce | 12   | 0   | 4.27    | +17% | 32      | +60% | 75%    |
+| degen-silent   | 12   | 0   | 4.00    | +10% | 25      | +25% | 100%   |
+```
+
+Per-task, the verdict is clean: every quality failure came from the
+announce condition (bash one-liner: 1/4 passing with announce, 4/4 without),
+and the announce line also accounts for most of the extra tokens and
+latency. The DEGEN block *by itself* lost nothing on quality (12/12), and on
+the one longer code-writing task it actually produced a slightly shorter
+answer than baseline (313 vs 348 tokens median). What remains with announce
+off is a modest fixed cost (~+10% agent time here) — the block itself is
+extra input context the model must read, which you pay on every request and
+notice most on tiny tasks.
+
+**As a result of this measurement, the announce feature is now off by
+default** (opt back in with `--announce`). If you enable it, don't use it on
+tasks that need bare, parseable output. And as always: don't trust anyone's
+speedup claim (including the mock sample above) without running the
+benchmark on your own tasks with `--repeats 5` or more.
 
 ### Comparing effort levels
 
@@ -282,14 +306,14 @@ faster on small, well-scoped tasks, and are comfortable reviewing its output.
   check before merging.
 - Anywhere you need a paper trail for *why* an agent was configured a
   particular way (a plain instruction file has no approval workflow).
-- **Tasks that need a bare, machine-parseable answer** (pure JSON, code with
-  no surrounding text, etc). The installed instruction tells the agent to
-  skip the `[DEGEN]` prefix for this case, and that reliably worked in our
-  testing for an explicit "JSON only" request — but did not help at all for
-  a "one-line bash command, no explanation" request, which still got
-  prefixed every time. Don't rely on the carve-out; use `--no-announce` for
-  anything that must be strictly parseable — see [the benchmark finding
-  below](#a-real-result-and-what-it-means).
+- **`--announce` + tasks that need a bare, machine-parseable answer** (pure
+  JSON, code with no surrounding text, etc). We measured the `[DEGEN]`
+  prefix leaking into strict-format output and breaking parsers, which is
+  why announce is now off by default — see [the benchmark
+  findings](#a-real-result-and-what-it-means). The instruction's built-in
+  carve-out helped for "JSON only" requests but not for terse shell
+  one-liners, so if you opt in with `--announce`, keep it away from
+  anything that must be strictly parseable.
 
 **Before installing `--global`:** it writes to your home-level config, which
 affects every project on the machine, not just the one you're in. That's why

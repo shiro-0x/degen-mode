@@ -26,6 +26,9 @@ Notes:
     --agent-cmd (e.g. --permission-mode acceptEdits) — only in a sandbox.
   * A condition can set "env" (e.g. MAX_THINKING_TOKENS) and "extra_args"
     (e.g. a different --model), which is how you compare effort levels.
+  * A condition with "degen": true can also set "install_args" (extra flags
+    passed to degen.sh install, e.g. ["--no-announce"]) — useful to isolate
+    the announce line's effect from the DEGEN block itself.
 
 Quality checks (so a speedup can't hide a quality loss):
   --tasks accepts a .json file of [{"prompt": "...", "check": "shell cmd"}]
@@ -137,7 +140,8 @@ def run_once(task, cond, agent_cmd, timeout):
         if cond.get("degen"):
             subprocess.run(
                 [str(DEGEN_SH), "install", "--dir", str(work),
-                 "--agent", cond.get("agent", "claude")],
+                 "--agent", cond.get("agent", "claude"),
+                 *(cond.get("install_args") or [])],
                 check=True, capture_output=True,
             )
         env = os.environ.copy()

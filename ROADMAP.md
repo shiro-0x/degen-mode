@@ -87,13 +87,32 @@ DEGEN says: record failures, keep an improvement log. This is that log.
   explanation." Documented as a partial mitigation in the README, not a
   fix: `--no-announce` remains the reliable answer for strict-output tasks.
   Re-running `install` updates existing installs to the new wording.
+- [x] **Root-cause the measured slowdown; announce flipped off by default.**
+  Owner asked why DEGEN measured slower and to remove the `[DEGEN]` prefix
+  if it was the cause. Ran an isolation experiment: baseline vs
+  DEGEN-with-announce vs DEGEN-without-announce, same three checked tasks,
+  n=12 per condition (36 real `claude` runs; bench gained an
+  `install_args` condition key to make this expressible). Verdict:
+  **every quality failure came from the announce condition** (75% check
+  pass vs 100% for both baseline and silent DEGEN; the bash one-liner task
+  was 1/4 with announce, 4/4 without), and announce accounted for most of
+  the extra tokens (+60% vs +25%) and latency (+17% vs +10% agent time).
+  The DEGEN block by itself lost nothing on quality and slightly shortened
+  the one long code answer (313 vs 348 tokens median); what remains is a
+  ~+10% fixed cost from the extra input context, unavoidable for any
+  instruction block. Since the owner's condition ("remove it if it's the
+  problem") was met, `--announce` is now opt-in (off by default;
+  `--no-announce` still accepted), status labels flipped accordingly
+  (`installed (announce)` marks the opt-in state), README updated.
 - [ ] **DEGEN.min wording / safe variant.** *(needs owner decision — this is
   the manifesto.)* Reviewers flagged `unclear→simple` and `works→push` as
   risky when read literally by an agent. Options: (a) amend the core text
   (e.g. `works→test→push`), (b) ship an optional safety-explicit variant
   selectable at install time, (c) keep as-is and rely on the Safety docs.
-- [ ] **Larger real benchmark run** (≥5 repeats, more/varied tasks) to see
-  if the n=6 finding above holds up or was itself a small-sample artifact.
+- [ ] **Larger real benchmark run** (≥5 repeats, more/varied tasks) — the
+  isolation experiment above (n=12/condition) supersedes the original n=6
+  lead, but a broader task mix is still worth running before treating the
+  "~+10% fixed cost, no quality loss without announce" conclusion as solid.
 
 ## Later / maybe
 

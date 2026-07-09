@@ -40,7 +40,7 @@ assert "t1: CLAUDE.md created" [ -f "$d/CLAUDE.md" ]
 assert "t1: AGENTS.md created" [ -f "$d/AGENTS.md" ]
 assert "t1: GEMINI.md created" [ -f "$d/GEMINI.md" ]
 assert "t1: copilot-instructions.md created" [ -f "$d/.github/copilot-instructions.md" ]
-assert "t1: CLAUDE.md has announce line" bash -c "grep -q 'Announce' '$d/CLAUDE.md'"
+assert "t1: no announce line by default" bash -c "! grep -q 'Announce' '$d/CLAUDE.md'"
 
 # ---- 2. re-running install is idempotent (no duplicate blocks) ---------
 "$DEGEN" install --dir "$d" >/dev/null
@@ -95,14 +95,17 @@ assert "t8: --global --dry-run still creates nothing" bash -c "[ ! -e '$gd' ]"
 HOME="$gd" "$DEGEN" install --global --agent claude --yes >/dev/null
 assert "t8: --global --yes writes the file" [ -f "$gd/.claude/CLAUDE.md" ]
 
-# ---- 9. status reports installed / silent / absent correctly --------------
+# ---- 9. announce is opt-in; status reports both modes ----------------------
 d="$WORK/t9"; mkdir -p "$d"
 "$DEGEN" install --dir "$d" --agent claude >/dev/null
 out="$("$DEGEN" status --dir "$d" --agent claude)"
-assert "t9: status shows installed (loud)" bash -c "echo '$out' | grep -q '^installed  *'"
-"$DEGEN" install --dir "$d" --agent claude --no-announce >/dev/null
+assert "t9: default install shows plain installed" bash -c "echo '$out' | grep -q '^installed  *' && ! echo '$out' | grep -q 'announce'"
+"$DEGEN" install --dir "$d" --agent claude --announce >/dev/null
+assert "t9: --announce adds the announce line" bash -c "grep -q 'Announce' '$d/CLAUDE.md'"
 out="$("$DEGEN" status --dir "$d" --agent claude)"
-assert "t9: status shows installed (silent)" bash -c "echo '$out' | grep -q 'installed (silent)'"
+assert "t9: status shows installed (announce)" bash -c "echo '$out' | grep -q 'installed (announce)'"
+"$DEGEN" install --dir "$d" --agent claude >/dev/null
+assert "t9: re-install without flag removes announce line" bash -c "! grep -q 'Announce' '$d/CLAUDE.md'"
 
 echo
 echo "smoke.sh: $pass passed, $fail failed"

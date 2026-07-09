@@ -2,6 +2,9 @@
   { "name": "baseline", "degen": false },
   { "name": "degen", "degen": true },
 
+  { "name": "degen-announce", "degen": true,
+    "install_args": ["--announce"] },
+
   { "name": "baseline-low-effort", "degen": false,
     "env": { "MAX_THINKING_TOKENS": "1024" } },
   { "name": "degen-low-effort", "degen": true,
