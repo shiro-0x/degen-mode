@@ -276,6 +276,57 @@ tasks that need bare, parseable output. And as always: don't trust anyone's
 speedup claim (including the mock sample above) without running the
 benchmark on your own tasks with `--repeats 5` or more.
 
+### The harder question: multi-turn build tasks
+
+Everything above used single-turn tasks (`turns` was always 1). But DEGEN's
+whole thesis — "build small, smallest safe action, ship" — is about
+*agentic* work: tasks where the model can go around several times and might
+over-engineer. So we built `bench/tasks_multiturn.example.json`: three small,
+mildly under-specified "write a working file" tasks, each verified by
+actually running the produced code (the harness runs `check` with its cwd set
+to the run's workspace, so it can inspect files the agent wrote, not just the
+reply text). Run with a permissive agent command:
+
+```sh
+python3 bench/degen_bench.py run --tasks bench/tasks_multiturn.example.json \
+  --agent-cmd 'claude -p {task} --output-format json --max-turns 12 --permission-mode acceptEdits' \
+  --repeats 3 --parallel 3
+```
+
+Result (n=9 per condition, real `claude`, every run produced working code —
+100% check pass on both sides):
+
+```
+| condition | runs | wall s | Δwall | turns | tot tok | Δtot | check% |
+|-----------|------|--------|-------|-------|---------|------|--------|
+| baseline  | 9    | 11.72  | +0%   | 3     | 97522   | +0%  | 100%   |
+| degen     | 9    | 11.19  | -4%   | 3     | 98168   | +1%  | 100%   |
+```
+
+Overall: **basically no difference** — and note this is *not* the net-negative
+we saw on trivial tasks, so the block's fixed cost stops mattering once the
+task itself is substantial. But the per-task breakdown is the honest story,
+because it's genuinely mixed:
+
+| task | baseline | degen | who won |
+|------|----------|-------|---------|
+| slug.py     | 4 turns / 130k tok | 3 turns / 98k tok | **DEGEN** (baseline over-worked it) |
+| parse_kv.py | 2 turns / 65k tok  | 3 turns / 98k tok | **baseline** (DEGEN added a turn) |
+| fizzbuzz.py | 3 turns / 98k tok  | 3 turns / 98k tok | tie |
+
+DEGEN helped exactly where its thesis predicts — the `slug` task, where
+baseline took an extra pass to polish and DEGEN shipped the minimal working
+version (−25% tokens, quality identical, and this held across all 3 repeats).
+But it *cost* an extra turn on `parse_kv`, and did nothing on `fizzbuzz`, so
+the average is a wash. Honest read: **on real multi-turn work DEGEN is roughly
+neutral, not the clear win or clear loss either extreme would suggest — it
+nudges the model toward "smallest thing that works," which helps when the
+model would otherwise gold-plate and hurts when it would have stopped anyway.**
+Caveats: only 3 similar coding tasks, n=3 each, high variance (turns ranged
+2–5); `acceptEdits` means the agent couldn't run its own code to self-test, so
+this doesn't cover exploratory/test-driven loops. A bigger, more varied run is
+the obvious next step (the whole thing cost ~$1.50, so it's cheap to extend).
+
 ### Comparing effort levels
 
 Some argue that switching the model's effort/thinking budget matters more

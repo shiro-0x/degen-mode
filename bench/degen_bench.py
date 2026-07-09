@@ -40,10 +40,13 @@ Notes:
 
 Quality checks (so a speedup can't hide a quality loss):
   --tasks accepts a .json file of [{"prompt": "...", "check": "shell cmd"}]
-  instead of a plain .txt prompt list. The agent's answer text is piped to
-  "check" on stdin; exit code 0 counts as a pass. The report then shows a
-  check% column per condition alongside speed/cost. See
-  bench/tasks_with_checks.example.json.
+  instead of a plain .txt prompt list. exit code 0 counts as a pass; the
+  report shows a check% column per condition. The check runs with the agent's
+  answer on stdin AND its cwd set to the run's workspace, so it can verify a
+  text reply (read stdin) or the files a build task produced (inspect cwd).
+  See bench/tasks_with_checks.example.json (text) and
+  bench/tasks_multiturn.example.json (build tasks that need tool use — run
+  those with an --agent-cmd that grants file permissions, see that file).
 """
 
 import argparse
@@ -127,12 +130,15 @@ def parse_agent_json(stdout):
 CHECK_TIMEOUT = 30  # seconds; quality checks should be quick and local
 
 
-def run_check(check_cmd, answer_text):
-    """Run a quality-check shell command with the agent's answer on stdin.
+def run_check(check_cmd, answer_text, cwd=None):
+    """Run a quality-check shell command. The agent's answer is on stdin, and
+    cwd is the run's workspace — so a check can inspect the reply text (for
+    text tasks) or the files the agent produced (for build tasks), or both.
     Returns True/False, or None if the check itself couldn't run."""
     try:
         proc = subprocess.run(check_cmd, shell=True, input=answer_text,
-                              text=True, capture_output=True, timeout=CHECK_TIMEOUT)
+                              text=True, capture_output=True, timeout=CHECK_TIMEOUT,
+                              cwd=cwd)
         return proc.returncode == 0
     except subprocess.TimeoutExpired:
         return False
@@ -195,7 +201,7 @@ def run_once(task, cond, agent_cmd, timeout):
         # not just pass/fail. This is also what a quality check is run against.
         rec["answer"] = data.get("result", stdout)
         if task.get("check") and not rec["is_error"]:
-            rec["check_pass"] = run_check(task["check"], rec["answer"])
+            rec["check_pass"] = run_check(task["check"], rec["answer"], cwd=work)
         elif task.get("check"):
             rec["check_pass"] = False  # agent errored -> can't have passed the check
     finally:
