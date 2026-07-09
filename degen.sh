@@ -16,6 +16,10 @@
 # Options:
 #   --agent <name>  Target only this agent (repeatable, or comma-separated).
 #                   Run `./degen.sh agents` to see valid names.
+#   --no-announce   Omit the announce line. By default the installed block
+#                   tells the agent to start every reply with "[DEGEN]", so
+#                   you can't forget the mode is active. Re-run install with
+#                   or without this flag to toggle it.
 #   --global        Operate on home-level (~) agent files instead of the project.
 #   --dir <path>    Operate on a specific project directory (default: cwd).
 #   --all           Write to every known target even if the file doesn't exist yet.
@@ -29,6 +33,7 @@ set -euo pipefail
 
 DEGEN_START="<!-- DEGEN:START — managed by degen.sh, do not edit inside this block -->"
 DEGEN_END="<!-- DEGEN:END -->"
+DEGEN_ANNOUNCE='Announce: start every reply with "[DEGEN]".'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SRC="$SCRIPT_DIR/DEGEN.min"
@@ -76,13 +81,15 @@ CMD="${1:-}"
 
 GLOBAL=0
 ALL=0
+ANNOUNCE=1
 DIR="$PWD"
 AGENTS_SELECTED=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --global) GLOBAL=1 ;;
-    --all)    ALL=1 ;;
+    --global)      GLOBAL=1 ;;
+    --all)         ALL=1 ;;
+    --no-announce) ANNOUNCE=0 ;;
     --dir)    shift; DIR="${1:?--dir needs a path}" ;;
     --agent)
       shift
@@ -153,6 +160,7 @@ block() {
   # emit the full managed block (markers + content)
   printf '%s\n' "$DEGEN_START"
   cat "$SRC"
+  [ "$ANNOUNCE" -eq 1 ] && printf '%s\n' "$DEGEN_ANNOUNCE"
   printf '%s\n' "$DEGEN_END"
 }
 
@@ -236,8 +244,15 @@ cmd_uninstall() {
 cmd_status() {
   local any=0
   for f in "${CREATE_FILES[@]}" "${UPDATE_FILES[@]}"; do
-    if has_block "$f"; then echo "installed    $f"; any=1
-    elif [ -f "$f" ]; then echo "present, no  $f"
+    if has_block "$f"; then
+      if grep -qF "$DEGEN_ANNOUNCE" "$f"; then
+        echo "installed             $f"
+      else
+        echo "installed (silent)    $f"
+      fi
+      any=1
+    elif [ -f "$f" ]; then
+      echo "file exists, no DEGEN $f"
     fi
   done
   [ "$any" -eq 1 ] || echo "DEGEN is not installed in these targets."
