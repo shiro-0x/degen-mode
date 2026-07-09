@@ -20,7 +20,12 @@
 #                   tells the agent to start every reply with "[DEGEN]", so
 #                   you can't forget the mode is active. Re-run install with
 #                   or without this flag to toggle it.
+#   --dry-run       Show what would change (and a diff of each file) without
+#                   writing anything. Works with both install and uninstall.
 #   --global        Operate on home-level (~) agent files instead of the project.
+#                   Requires --yes (or --dry-run to preview first) since it
+#                   affects every project on the machine, not just this one.
+#   --yes           Confirm a --global install/uninstall.
 #   --dir <path>    Operate on a specific project directory (default: cwd).
 #   --all           Write to every known target even if the file doesn't exist yet.
 #                   (Default: create the cross-tool files, and update any other
@@ -50,7 +55,7 @@ declare -A AGENT_LABEL=(
   [windsurf]="Windsurf"
   [cline]="Cline"
   [aider]="Aider"
-  [grok]="Grok (xAI) — via AGENTS.md standard"
+  [grok]="Grok (xAI) — via AGENTS.md standard (experimental, unverified)"
 )
 declare -A AGENT_PROJECT_FILE=(
   [claude]="CLAUDE.md"
@@ -77,11 +82,13 @@ DEFAULT_UPDATE_AGENTS=(cursor windsurf cline aider)
 # ---- args -------------------------------------------------------------------
 
 CMD="${1:-}"
-[ $# -gt 0 ] && shift || true
+if [ $# -gt 0 ]; then shift; fi
 
 GLOBAL=0
 ALL=0
 ANNOUNCE=1
+DRYRUN=0
+YES=0
 DIR="$PWD"
 AGENTS_SELECTED=()
 
@@ -90,6 +97,8 @@ while [ $# -gt 0 ]; do
     --global)      GLOBAL=1 ;;
     --all)         ALL=1 ;;
     --no-announce) ANNOUNCE=0 ;;
+    --dry-run)     DRYRUN=1 ;;
+    --yes)         YES=1 ;;
     --dir)    shift; DIR="${1:?--dir needs a path}" ;;
     --agent)
       shift
@@ -109,6 +118,13 @@ for a in "${AGENTS_SELECTED[@]:-}"; do
     exit 2
   fi
 done
+
+if [ "$GLOBAL" -eq 1 ] && [ "$YES" -ne 1 ] && [ "$DRYRUN" -ne 1 ] \
+   && { [ "$CMD" = "install" ] || [ "$CMD" = "uninstall" ]; }; then
+  echo "refusing: --global affects every project on this machine." >&2
+  echo "Preview first with --dry-run, or confirm with --yes." >&2
+  exit 2
+fi
 
 # ---- target selection -------------------------------------------------------
 
@@ -156,6 +172,19 @@ fi
 
 # ---- helpers ----------------------------------------------------------------
 
+# Temp files are tracked here and cleaned up on any exit (success, error, or
+# an early exit from set -e), instead of relying on a function-local trap —
+# `trap ... RETURN` in bash is not function-scoped, it fires on every
+# function return until explicitly cleared, which corrupts the caller.
+TMP_FILES=()
+cleanup_tmp_files() {
+  local t
+  for t in "${TMP_FILES[@]}"; do
+    rm -f "$t"
+  done
+}
+trap cleanup_tmp_files EXIT
+
 block() {
   # emit the full managed block (markers + content)
   printf '%s\n' "$DEGEN_START"
@@ -185,29 +214,61 @@ strip_block() {
 }
 
 install_one() {
-  local f="$1" tmp
-  tmp="$(mktemp)"
-  mkdir -p "$(dirname "$f")"
-  if has_block "$f"; then
-    # update in place: strip old block, re-append fresh one
-    { strip_block "$f"; [ -s "$f" ] && printf '\n'; block; } > "$tmp"
-    mv "$tmp" "$f"
-    echo "updated  $f"
-  elif [ -f "$f" ]; then
-    { cat "$f"; printf '\n'; block; } > "$tmp"
-    mv "$tmp" "$f"
-    echo "appended $f"
+  local f="$1" dir tmp verb past rest
+  dir="$(dirname "$f")"
+  if [ "$DRYRUN" -eq 1 ]; then
+    # no side effects on preview: don't create the target directory, just a
+    # scratch tmp file to diff against.
+    tmp="$(mktemp)"
   else
-    block > "$f"
-    echo "created  $f"
+    mkdir -p "$dir"
+    tmp="$(mktemp "$dir/.degen.tmp.XXXXXX")"
   fi
+  TMP_FILES+=("$tmp")
+
+  if has_block "$f"; then
+    verb="update"; past="updated"
+    rest="$(strip_block "$f")"
+    if [ -n "$rest" ]; then
+      { printf '%s\n\n' "$rest"; block; } > "$tmp"
+    else
+      block > "$tmp"
+    fi
+  elif [ -f "$f" ]; then
+    verb="append"; past="appended"
+    { cat "$f"; printf '\n'; block; } > "$tmp"
+  else
+    verb="create"; past="created"
+    block > "$tmp"
+  fi
+
+  if [ "$DRYRUN" -eq 1 ]; then
+    echo "would $verb  $f"
+    diff -u "$( [ -f "$f" ] && echo "$f" || echo /dev/null )" "$tmp" || true
+    return
+  fi
+
+  mv "$tmp" "$f"
+  printf '%-9s %s\n' "$past" "$f"
 }
 
 uninstall_one() {
   local f="$1" tmp
   has_block "$f" || return 0
-  tmp="$(mktemp)"
+  tmp="$(mktemp "$(dirname "$f")/.degen.tmp.XXXXXX")"
+  TMP_FILES+=("$tmp")
   strip_block "$f" > "$tmp"
+
+  if [ "$DRYRUN" -eq 1 ]; then
+    if [ -s "$tmp" ]; then
+      echo "would clean   $f"
+      diff -u "$f" "$tmp" || true
+    else
+      echo "would remove  $f"
+    fi
+    return
+  fi
+
   if [ -s "$tmp" ]; then
     mv "$tmp" "$f"
     echo "cleaned  $f"
@@ -231,14 +292,24 @@ cmd_install() {
       install_one "$f"; wrote=1
     fi
   done
-  [ "$wrote" -eq 1 ] && echo "DEGEN installed." || echo "nothing to do."
+  if [ "$wrote" -ne 1 ]; then
+    echo "nothing to do."
+  elif [ "$DRYRUN" -eq 1 ]; then
+    echo "(dry run — nothing written; re-run without --dry-run to apply)"
+  else
+    echo "DEGEN installed."
+  fi
 }
 
 cmd_uninstall() {
   for f in "${CREATE_FILES[@]}" "${UPDATE_FILES[@]}"; do
     uninstall_one "$f"
   done
-  echo "DEGEN uninstalled."
+  if [ "$DRYRUN" -eq 1 ]; then
+    echo "(dry run — nothing written; re-run without --dry-run to apply)"
+  else
+    echo "DEGEN uninstalled."
+  fi
 }
 
 cmd_status() {
@@ -276,7 +347,7 @@ case "$CMD" in
     ;;
   *)
     echo "unknown command: $CMD" >&2
-    echo "usage: degen.sh {install|uninstall|status|agents} [--agent NAME] [--global] [--dir PATH] [--all]" >&2
+    echo "usage: degen.sh {install|uninstall|status|agents} [--agent NAME] [--dry-run] [--global --yes] [--dir PATH] [--all]" >&2
     exit 2
     ;;
 esac
