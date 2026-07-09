@@ -109,10 +109,28 @@ DEGEN says: record failures, keep an improvement log. This is that log.
   risky when read literally by an agent. Options: (a) amend the core text
   (e.g. `works→test→push`), (b) ship an optional safety-explicit variant
   selectable at install time, (c) keep as-is and rely on the Safety docs.
+- [x] **Subagent-driven A/B tooling.** Owner asked for a way to verify
+  outcome, token consumption, and speed for the same prompt using subagents.
+  Added `degen_bench.py ab "PROMPT"`: runs one prompt across conditions,
+  each run an independent subagent (fresh agent process, isolated
+  workspace), and prints the answers side by side plus metrics. Added
+  `--parallel N` (to both `ab` and `run`) to drive several subagents at
+  once — verified it actually parallelizes (6 mock runs 8.9s → 1.8s at
+  `--parallel 6`). Token reporting now covers input (incl. cache) and total,
+  not just output; `--save-answers DIR` and `report --answers` surface the
+  raw outcomes for eyeballing. Fixed a bug the parallelism exposed: the
+  report's baseline (Δ reference) row followed record *completion* order, so
+  out-of-order parallel completion could pick the wrong reference — now the
+  intended condition order is stamped per record and used for sorting.
+  Verified end-to-end against the real `claude` CLI.
 - [ ] **Larger real benchmark run** (≥5 repeats, more/varied tasks) — the
   isolation experiment above (n=12/condition) supersedes the original n=6
   lead, but a broader task mix is still worth running before treating the
   "~+10% fixed cost, no quality loss without announce" conclusion as solid.
+  The new `ab --parallel` tooling makes a bigger run cheap to do; the still-
+  open question is DEGEN's effect on *ambiguous / multi-turn* tasks (all
+  benchmark tasks so far were single-turn, which never exercises the "fewer
+  turns" mechanism DEGEN is meant to trigger).
 
 ## Later / maybe
 
